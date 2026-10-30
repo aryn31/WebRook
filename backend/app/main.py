@@ -1,0 +1,34 @@
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+from app.config import get_settings
+from app.errors import install_error_handlers
+from app.logconfig import configure_logging
+from app.routers import api_keys, auth, deliveries, endpoints, events, health, stats
+
+configure_logging()
+
+app = FastAPI(
+    title="HookFlow API",
+    version="1.0.0",
+    description="Send events once; HookFlow delivers, retries and records them. See docs/api.md.",
+)
+install_error_handlers(app)
+
+
+@app.middleware("http")
+async def limit_body_size(request: Request, call_next):
+    """Reject oversized requests early, before reading the body."""
+    max_bytes = get_settings().max_payload_bytes
+    length = request.headers.get("content-length")
+    if length and length.isdigit() and int(length) > max_bytes:
+        return JSONResponse(
+            {"error": {"code": "payload_too_large", "message": f"Request body exceeds the {max_bytes} byte limit.",
+                       "details": None}},
+            status_code=413,
+        )
+    return await call_next(request)
+
+
+for r in (health, auth, api_keys, endpoints, events, deliveries, stats):
+    app.include_router(r.router)

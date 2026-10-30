@@ -1,0 +1,89 @@
+# Local development stack. Run: docker compose up --build
+# Dashboard: http://localhost:3000   API docs: http://localhost:8000/docs   Test receiver logs: docker compose logs -f receiver
+
+x-backend: &backend
+  build:
+    context: ./backend
+    args:
+      INSTALL_DEV: "true"
+  environment: &backend-env
+    DATABASE_URL: postgresql+psycopg://hookflow:hookflow@postgres:5432/hookflow
+    REDIS_URL: redis://redis:6379/0
+    SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?Set SECRET_ENCRYPTION_KEY in .env (see .env.example)}
+    # Local dev only: lets HookFlow deliver to the test receiver on the Docker network.
+    BLOCK_PRIVATE_DESTINATIONS: "false"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hookflow
+      POSTGRES_PASSWORD: hookflow
+      POSTGRES_DB: hookflow
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hookflow"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
+
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    <<: *backend
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes: ["./backend:/app"]
+    ports: ["8000:8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *backend
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--concurrency=8"]
+    volumes: ["./backend:/app"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Runs the sweeper every few seconds. Run exactly one of these.
+  beat:
+    <<: *backend
+    command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  receiver:
+    build: ./receiver
+    ports: ["9000:9000"]
+    environment:
+      RECEIVER_SECRET: ${RECEIVER_SECRET:-}
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://api:8000
+    environment:
+      BACKEND_URL: http://api:8000
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+volumes:
+  pgdata:

@@ -1,0 +1,31 @@
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+
+from app.db import engine
+from app.ratelimit import get_redis
+
+router = APIRouter(prefix="/health", tags=["health"])
+
+
+@router.get("/live")
+def live() -> dict:
+    return {"status": "ok"}
+
+
+@router.get("/ready")
+def ready() -> JSONResponse:
+    checks: dict[str, str] = {}
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception:
+        checks["database"] = "unavailable"
+    try:
+        get_redis().ping()
+        checks["redis"] = "ok"
+    except Exception:
+        checks["redis"] = "unavailable"
+    ok = all(v == "ok" for v in checks.values())
+    return JSONResponse({"status": "ok" if ok else "unavailable", "checks": checks}, status_code=200 if ok else 503)
