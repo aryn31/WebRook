@@ -15,6 +15,11 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
     worker_hijack_root_logger=False,
     beat_schedule={
+        "publish-outbox": {
+            "task": "hookflow.publish_outbox",
+            "schedule": settings.outbox_poll_interval_seconds,
+            "options": {"expires": max(settings.outbox_poll_interval_seconds, 1.0)},
+        },
         "sweep-deliveries": {
             "task": "hookflow.sweep",
             "schedule": settings.sweep_interval_seconds,

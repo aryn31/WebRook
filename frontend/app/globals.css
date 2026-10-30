@@ -213,6 +213,7 @@ p { margin: 0 0 10px; }
 
 .confirm { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .confirm-prompt { font-size: 12.5px; color: var(--text-failed); }
+.confirm-prompt-neutral { color: var(--text-2); }
 
 .segmented { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; background: var(--surface); }
 .segmented button { border: 0; background: transparent; color: var(--text-2); padding: 5px 12px; font: inherit; font-weight: 500; cursor: pointer; }
@@ -259,6 +260,8 @@ p { margin: 0 0 10px; }
 }
 .alert-error { background: var(--bg-failed); color: var(--text-failed); border-color: color-mix(in srgb, var(--status-failed) 30%, transparent); }
 .alert-warning { background: var(--bg-retrying); color: var(--text-retrying); border-color: color-mix(in srgb, var(--status-retrying) 30%, transparent); }
+.alert-success { background: var(--bg-delivered); color: var(--text-delivered); border-color: color-mix(in srgb, var(--status-delivered) 30%, transparent); }
+.alert-info { background: var(--bg-pending); color: var(--text-pending); border-color: color-mix(in srgb, var(--status-pending) 30%, transparent); }
 .alert-details { margin: 4px 0 0; padding-left: 18px; }
 .alert strong { font-weight: 600; }
 
@@ -438,3 +441,41 @@ tr.row-click:has(+ .row-explain) td { border-bottom: 0; padding-bottom: 4px; }
   border-radius: 12px; padding: 28px; box-shadow: var(--shadow);
 }
 .auth-title { font-size: 17px; text-align: center; }
+
+/* ---------- replay ---------- */
+.replay-action { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.replay-error { font-size: 12px; color: var(--text-failed); max-width: 260px; white-space: normal; text-align: right; }
+.replay-badge {
+  margin-left: 6px; font-size: 11px; font-weight: 600; padding: 0 5px; border-radius: 4px;
+  background: var(--accent-soft); color: var(--accent);
+}
+.replay-marker { display: flex; align-items: center; gap: 10px; margin: 2px 0; }
+.replay-marker-line { flex: 1; height: 0; border-top: 1px dashed var(--border-strong); }
+.replay-marker-text { font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+@media (max-width: 600px) { .replay-marker-text { white-space: normal; text-align: center; } }
+.table-notice { margin: 8px 0; }
+.card-flush .table-notice { margin: 12px; }
+.result-list { margin: 4px 0 0; padding-left: 18px; }
+.result-list li { margin: 1px 0; }
+
+/* ---------- audit log ---------- */
+.filter-bar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; padding: 12px; border-bottom: 1px solid var(--border); }
+.filter-bar .field { min-width: 220px; }
+.select { appearance: auto; padding-right: 6px; }
+.audit-details { margin: 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--text-2); }
+.audit-details li { word-break: break-word; }
+.actor-key { font-family: var(--mono); font-size: 12px; }
+.nowrap-cell { white-space: nowrap; }
+.replay-bar { align-items: flex-start; margin-bottom: 4px; }
+.replay-bar > p { margin: 4px 0 0; }
+.replay-result { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; }
+.field-narrow { max-width: 420px; }
+.field-narrow .input { max-width: 120px; }
+.mb { margin-bottom: 12px; }
+.rotate-panel {
+  margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.segmented { flex-wrap: wrap; width: fit-content; max-width: 100%; }
+.actions-cell { width: 1%; white-space: nowrap; padding-left: 4px !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

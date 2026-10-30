@@ -1,3 +1,4 @@
+from app import outbox
 from app.worker.celery_app import celery_app
 from app.worker.engine import process_delivery, sweep
 
@@ -7,6 +8,11 @@ def deliver(delivery_id: str) -> str:
     return process_delivery(delivery_id)
 
 
+@celery_app.task(name="hookflow.publish_outbox")
+def publish_outbox_task() -> int:
+    return outbox.publish_due()
+
+
 @celery_app.task(name="hookflow.sweep")
 def sweep_task() -> dict[str, int]:
-    return sweep(enqueue=lambda delivery_id: deliver.delay(delivery_id))
+    return sweep()

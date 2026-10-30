@@ -6,12 +6,15 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type Delivery, type Endpoint, type EventAccepted } from "@/lib/api";
 import { EventTypeList, EventTypesInput } from "@/components/EventTypesInput";
 import { DeliveryTable } from "@/components/DeliveryTable";
-import { ConfirmButton, CopyButton, Empty, ErrorBox, Loading, PageHeader, Time } from "@/components/ui";
+import { MaxAttemptsInput, maxAttemptsError } from "@/components/MaxAttemptsInput";
+import { ConfirmButton, CopyButton, Empty, ErrorBox, Loading, PageHeader, SecretBox, Time } from "@/components/ui";
+import { formatClock, formatSeconds, formatUtc, GRACE_DEFAULT, GRACE_OPTIONS, isFuture, relative } from "@/lib/format";
 
 function EditForm({ endpoint, onSaved, onCancel }: { endpoint: Endpoint; onSaved: (e: Endpoint) => void; onCancel: () => void }) {
   const [url, setUrl] = useState(endpoint.url);
   const [description, setDescription] = useState(endpoint.description ?? "");
   const [types, setTypes] = useState<string[]>(endpoint.event_types);
+  const [maxAttempts, setMaxAttempts] = useState(String(endpoint.max_attempts));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const [localErr, setLocalErr] = useState<string | null>(null);
@@ -29,6 +32,11 @@ function EditForm({ endpoint, onSaved, onCancel }: { endpoint: Endpoint; onSaved
       setLocalErr("Choose at least one event type, or select All events.");
       return;
     }
+    const maErr = maxAttemptsError(maxAttempts);
+    if (maErr) {
+      setLocalErr(maErr);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -36,6 +44,7 @@ function EditForm({ endpoint, onSaved, onCancel }: { endpoint: Endpoint; onSaved
         url: url.trim(),
         description: description.trim() || null,
         event_types: types,
+        ...(Number(maxAttempts) !== endpoint.max_attempts ? { max_attempts: Number(maxAttempts) } : {}),
       });
       onSaved(saved);
     } catch (e2) {
@@ -56,6 +65,7 @@ function EditForm({ endpoint, onSaved, onCancel }: { endpoint: Endpoint; onSaved
         <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
       </label>
       <EventTypesInput value={types} onChange={setTypes} />
+      <MaxAttemptsInput value={maxAttempts} onChange={setMaxAttempts} editing />
       {localErr && <div className="alert alert-error">{localErr}</div>}
       <ErrorBox error={err} />
       <div className="row">
@@ -70,17 +80,26 @@ function EditForm({ endpoint, onSaved, onCancel }: { endpoint: Endpoint; onSaved
   );
 }
 
-function SecretSection({ endpointId }: { endpointId: string }) {
+function SecretSection({
+  endpoint,
+  onRotated,
+}: {
+  endpoint: Endpoint;
+  onRotated: (previousSecretExpiresAt: string | null) => void;
+}) {
   const [secret, setSecret] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
-  const [rotated, setRotated] = useState(false);
+  const [rotating, setRotating] = useState(false);
+  const [grace, setGrace] = useState(GRACE_DEFAULT);
+  const [rotated, setRotated] = useState<{ secret: string; graceSeconds: number; expiresAt: string | null } | null>(null);
 
+  // Viewing the secret is audited, so it's only fetched on an explicit click.
   async function reveal() {
     setBusy(true);
     setErr(null);
     try {
-      setSecret((await api.getEndpointSecret(endpointId)).signing_secret);
+      setSecret((await api.getEndpointSecret(endpoint.id)).signing_secret);
     } catch (e) {
       setErr(e);
     } finally {
@@ -89,14 +108,22 @@ function SecretSection({ endpointId }: { endpointId: string }) {
   }
 
   async function rotate() {
+    setBusy(true);
     setErr(null);
     try {
-      setSecret((await api.rotateEndpointSecret(endpointId)).signing_secret);
-      setRotated(true);
+      const res = await api.rotateEndpointSecret(endpoint.id, grace);
+      setRotated({ secret: res.signing_secret, graceSeconds: grace, expiresAt: res.previous_secret_expires_at });
+      setSecret(null);
+      setRotating(false);
+      onRotated(res.previous_secret_expires_at);
     } catch (e) {
       setErr(e);
+    } finally {
+      setBusy(false);
     }
   }
+
+  const graceActive = isFuture(endpoint.previous_secret_expires_at);
 
   return (
     <section className="card">
@@ -107,31 +134,90 @@ function SecretSection({ endpointId }: { endpointId: string }) {
         Use this secret to verify the <code className="mono">HookFlow-Signature</code> header: HMAC-SHA256 of{" "}
         <code className="mono">{"{timestamp}.{raw body}"}</code>.
       </p>
-      <div className="secret-row">
-        <code className="mono secret-value">{secret ?? "whsec_••••••••••••••••••••••••"}</code>
-        {secret ? (
-          <>
-            <CopyButton text={secret} />
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSecret(null)}>
-              Hide
+
+      {graceActive && !rotated && (
+        <div className="alert alert-info mb">
+          <span>
+            Rotation in progress: the previous secret also signs requests until{" "}
+            <strong title={formatUtc(endpoint.previous_secret_expires_at)}>{formatClock(endpoint.previous_secret_expires_at)}</strong> (
+            {relative(endpoint.previous_secret_expires_at)}). The header carries two signatures,{" "}
+            <code className="mono">v1=&lt;new&gt;,v1=&lt;old&gt;</code> — accept either.
+          </span>
+        </div>
+      )}
+
+      {rotated ? (
+        <div className="stack">
+          <SecretBox
+            title="New signing secret"
+            value={rotated.secret}
+            warning={
+              rotated.graceSeconds > 0 && rotated.expiresAt
+                ? `Old secret still signs until ${formatClock(rotated.expiresAt)} (${formatSeconds(rotated.graceSeconds)}). Deploy the new secret to your endpoint before then.`
+                : "The old secret stopped working immediately. Update your endpoint with the new secret now."
+            }
+          />
+          <div className="row">
+            <button type="button" className="btn btn-sm" onClick={() => setRotated(null)}>
+              Done
             </button>
-          </>
-        ) : (
-          <button type="button" className="btn btn-sm" onClick={reveal} disabled={busy}>
-            {busy ? "Revealing…" : "Reveal"}
-          </button>
-        )}
-        <ConfirmButton
-          small
-          label="Rotate"
-          prompt="The current secret stops working immediately."
-          confirmLabel="Rotate secret"
-          onConfirm={rotate}
-        />
-      </div>
-      {rotated && (
-        <div className="alert alert-warning mt">
-          Secret rotated. Update your endpoint with the new secret now — signatures made with the old one will no longer match.
+          </div>
+        </div>
+      ) : (
+        <div className="secret-row">
+          <code className="mono secret-value">{secret ?? "whsec_••••••••••••••••••••••••"}</code>
+          {secret ? (
+            <>
+              <CopyButton text={secret} />
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSecret(null)}>
+                Hide
+              </button>
+            </>
+          ) : (
+            <button type="button" className="btn btn-sm" onClick={reveal} disabled={busy}>
+              {busy && !rotating ? "Revealing…" : "Reveal"}
+            </button>
+          )}
+          {!rotating && (
+            <button type="button" className="btn btn-sm btn-danger-ghost" onClick={() => setRotating(true)}>
+              Rotate…
+            </button>
+          )}
+        </div>
+      )}
+
+      {rotating && !rotated && (
+        <div className="rotate-panel">
+          <div className="field">
+            <span className="field-label">Keep the old secret working for</span>
+            <div className="segmented" role="radiogroup" aria-label="Grace period">
+              {GRACE_OPTIONS.map((o) => (
+                <button
+                  key={o.seconds}
+                  type="button"
+                  role="radio"
+                  aria-checked={grace === o.seconds}
+                  className={grace === o.seconds ? "active" : ""}
+                  onClick={() => setGrace(o.seconds)}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <span className="field-hint">
+              {grace > 0
+                ? `For ${formatSeconds(grace)} HookFlow signs with both the new and the old secret, so you can deploy the new one without dropping webhooks.`
+                : "The old secret stops working immediately — requests signed after this will fail verification until you deploy the new secret."}
+            </span>
+          </div>
+          <div className="row">
+            <button type="button" className={`btn ${grace > 0 ? "btn-primary" : "btn-danger"}`} onClick={rotate} disabled={busy}>
+              {busy ? "Rotating…" : "Rotate secret"}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => setRotating(false)} disabled={busy}>
+              Cancel
+            </button>
+          </div>
         </div>
       )}
       <ErrorBox error={err} />
@@ -288,6 +374,9 @@ export default function EndpointDetailPage() {
       <section className="card">
         <div className="card-head">
           <h2>Details</h2>
+          <Link href={`/audit-log?resource_id=${endpoint.id}`} className="small">
+            Audit log →
+          </Link>
         </div>
         {editing ? (
           <EditForm
@@ -308,6 +397,10 @@ export default function EndpointDetailPage() {
             <dd>
               <EventTypeList types={endpoint.event_types} />
             </dd>
+            <dt>Max attempts</dt>
+            <dd>
+              {endpoint.max_attempts} <span className="muted small">per delivery, including the first</span>
+            </dd>
             <dt>Created</dt>
             <dd>
               <Time iso={endpoint.created_at} />
@@ -320,7 +413,10 @@ export default function EndpointDetailPage() {
         )}
       </section>
 
-      <SecretSection endpointId={endpoint.id} />
+      <SecretSection
+        endpoint={endpoint}
+        onRotated={(exp) => setEndpoint((e) => (e ? { ...e, previous_secret_expires_at: exp } : e))}
+      />
 
       <section className="card">
         <div className="card-head">

@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     max_payload_bytes: int = 1024 * 1024
     max_endpoints_per_account: int = 50
     auth_rate_limit_per_minute: int = 10
+    # Manual replays per account per minute. Each delivery replayed counts once.
+    replay_rate_limit_per_minute: int = 60
+    # How long an Idempotency-Key on POST /v1/events is remembered.
+    idempotency_key_ttl_hours: int = 24
 
     # Delivery
     delivery_timeout_seconds: float = 10.0
@@ -32,6 +36,10 @@ class Settings(BaseSettings):
     delivery_lease_seconds: int = 60
     response_body_max_bytes: int = 4096
     sweep_interval_seconds: float = 5.0
+    # How often the outbox publisher moves unpublished queue messages to Redis.
+    outbox_poll_interval_seconds: float = 1.0
+    # Default grace period when rotating a signing secret (the old secret keeps signing too).
+    secret_rotation_grace_seconds: int = 24 * 3600
 
     # Block deliveries to loopback/private/link-local addresses (SSRF protection).
     # Turn off only for local development, where test receivers run on private networks.

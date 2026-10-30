@@ -2,7 +2,7 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import Delivery, User
+from app.models import Delivery, OutboxMessage, User
 from tests.conftest import make_user
 
 EP = {"url": "https://hooks.example.com/a", "event_types": ["order.created"]}
@@ -173,11 +173,19 @@ def test_event_creates_deliveries_for_matching_endpoints_only(user_a, queued):
 def test_event_saved_even_if_queue_is_down(user_a, monkeypatch):
     c, h = user_a
     c.post("/v1/endpoints", json=EP, headers=h)
-    monkeypatch.setattr("app.routers.events.enqueue_delivery", lambda _id: False)
+
+    def broker_down(_id):
+        raise ConnectionError("redis unreachable")
+
+    monkeypatch.setattr("app.queue.send_delivery", broker_down)
     r = c.post("/v1/events", json=EVENT, headers=h)
     assert r.status_code == 202
     with SessionLocal() as db:
-        assert db.scalar(select(Delivery).where(Delivery.event_id == r.json()["event_id"])) is not None
+        d = db.scalar(select(Delivery).where(Delivery.event_id == r.json()["event_id"]))
+        assert d is not None
+        # The queue message is saved in the outbox, waiting for the publisher.
+        [msg] = db.scalars(select(OutboxMessage).where(OutboxMessage.delivery_id == d.id)).all()
+        assert msg.published_at is None and msg.publish_attempts == 1 and "unreachable" in msg.last_error
 
 
 def test_event_validation(user_a):

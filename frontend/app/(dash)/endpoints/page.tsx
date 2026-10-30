@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, type Endpoint, type EndpointWithSecret } from "@/lib/api";
+import { api, MAX_ATTEMPTS_DEFAULT, type Endpoint, type EndpointWithSecret } from "@/lib/api";
 import { EventTypeList, EventTypesInput } from "@/components/EventTypesInput";
+import { MaxAttemptsInput, maxAttemptsError } from "@/components/MaxAttemptsInput";
 import { Empty, ErrorBox, Loading, PageHeader, SecretBox, Time } from "@/components/ui";
 
 function CreateForm({ onCreated, onCancel }: { onCreated: (e: EndpointWithSecret) => void; onCancel: () => void }) {
   const [url, setUrl] = useState("");
   const [description, setDescription] = useState("");
   const [types, setTypes] = useState<string[]>(["*"]);
+  const [maxAttempts, setMaxAttempts] = useState(String(MAX_ATTEMPTS_DEFAULT));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const [localErr, setLocalErr] = useState<string | null>(null);
@@ -33,6 +35,11 @@ function CreateForm({ onCreated, onCancel }: { onCreated: (e: EndpointWithSecret
       setLocalErr("Choose at least one event type, or select All events.");
       return;
     }
+    const maErr = maxAttemptsError(maxAttempts);
+    if (maErr) {
+      setLocalErr(maErr);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -40,6 +47,7 @@ function CreateForm({ onCreated, onCancel }: { onCreated: (e: EndpointWithSecret
         url: url.trim(),
         description: description.trim() || undefined,
         event_types: types,
+        max_attempts: Number(maxAttempts),
       });
       onCreated(created);
     } catch (e2) {
@@ -69,6 +77,7 @@ function CreateForm({ onCreated, onCancel }: { onCreated: (e: EndpointWithSecret
         <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Orders service" />
       </label>
       <EventTypesInput value={types} onChange={setTypes} />
+      <MaxAttemptsInput value={maxAttempts} onChange={setMaxAttempts} />
       {localErr && <div className="alert alert-error">{localErr}</div>}
       <ErrorBox error={err} />
       <div className="row">
@@ -180,6 +189,7 @@ export default function EndpointsPage() {
                 <tr>
                   <th>URL</th>
                   <th>Event types</th>
+                  <th>Max attempts</th>
                   <th>Status</th>
                   <th>Created</th>
                 </tr>
@@ -196,6 +206,7 @@ export default function EndpointsPage() {
                     <td>
                       <EventTypeList types={e.event_types} />
                     </td>
+                    <td className="mono">{e.max_attempts}</td>
                     <td>
                       {e.enabled ? <span className="badge badge-green">Enabled</span> : <span className="badge badge-grey">Disabled</span>}
                     </td>

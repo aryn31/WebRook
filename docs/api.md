@@ -24,7 +24,9 @@ Every error has the same shape:
 ```
 
 Common codes: `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` / `email_taken` (409),
-`validation_error` (422, `details` holds field errors), `payload_too_large` (413), `rate_limited` (429).
+`idempotency_key_reused` (409), `not_replayable` / `nothing_to_replay` (409),
+`validation_error` (422, `details` holds field errors), `payload_too_large` (413), `rate_limited` (429, with a
+`Retry-After` header).
 
 ## Pagination
 
@@ -79,21 +81,32 @@ type ApiKey = {
 type Endpoint = {
   id: string; url: string; description: string | null; enabled: boolean;
   event_types: string[];        // exact event types, or ["*"] for all events
+  max_attempts: number;         // attempts per delivery, including the first (1–10, default 5)
+  previous_secret_expires_at: string | null;  // set while a rotation grace period is running
   created_at: string; updated_at: string
 }
 ```
 
 ### `GET /v1/endpoints` → paginated `Endpoint[]`
 ### `POST /v1/endpoints`
-Body: `{ "url": "https://example.com/hooks", "description"?: string, "event_types": ["order.created"], "enabled"?: true }`
+Body: `{ "url": "https://example.com/hooks", "description"?: string, "event_types": ["order.created"], "enabled"?: true, "max_attempts"?: 5 }`
 `201` → `Endpoint & { "signing_secret": "whsec_..." }`
 ### `GET /v1/endpoints/{id}` → `Endpoint`
 ### `PATCH /v1/endpoints/{id}`
-Body: any of `url`, `description`, `event_types`, `enabled` → `Endpoint`
+Body: any of `url`, `description`, `event_types`, `enabled`, `max_attempts` → `Endpoint`.
+A new `max_attempts` applies to deliveries created afterwards; existing ones keep the limit they started with.
 ### `DELETE /v1/endpoints/{id}` → `204`
 Archives the endpoint: it disappears from lists, gets no new deliveries, and its unsent deliveries are cancelled. Delivery history stays.
-### `GET /v1/endpoints/{id}/secret` → `{ "signing_secret": "whsec_..." }`
-### `POST /v1/endpoints/{id}/rotate-secret` → `{ "signing_secret": "whsec_..." }` (old secret stops working immediately)
+### `GET /v1/endpoints/{id}/secret` → `{ "signing_secret": "whsec_...", "previous_secret_expires_at": string | null }`
+Each call is recorded in the audit log.
+### `POST /v1/endpoints/{id}/rotate-secret`
+Body (optional): `{ "grace_period_seconds": 86400 }` (0 to 604800, default 24 hours)
+→ `{ "signing_secret": "whsec_<new>", "previous_secret_expires_at": "..." | null }`
+
+During the grace period every request carries two signatures, one per secret:
+`HookFlow-Signature: v1=<new>,v1=<old>`. Your receiver can switch to the new secret at any point in that window
+without rejecting anything. With `grace_period_seconds: 0` the old secret stops at once. Rotating again during a
+grace period replaces the old secret with the one being rotated out.
 
 ## Events
 
@@ -108,6 +121,21 @@ Body: `{ "event_type": "order.created", "data": { ...any JSON object... } }`
 ```
 Returned only after the event and its deliveries are saved. HookFlow does not wait for your endpoints.
 
+**Idempotency.** Send an `Idempotency-Key` header (1–255 printable ASCII characters, no spaces) to make retries safe:
+
+```bash
+curl -X POST localhost:8000/v1/events -H "Authorization: Bearer $HOOKFLOW_KEY" \
+  -H "Idempotency-Key: order-ORD-101-created" -H "Content-Type: application/json" \
+  -d '{"event_type":"order.created","data":{"order_id":"ORD-101"}}'
+```
+
+- Same key and same request: returns the original `202` response with the same `event_id` and the header
+  `Idempotent-Replayed: true`. No new event, nothing sent again.
+- Same key, different `event_type` or `data`: `409 idempotency_key_reused`, with the original `event_id` in `details`.
+  "Same" compares JSON values, so key order and whitespace don't matter.
+- Keys are per account and remembered for 24 hours. After that the key can be used again.
+- Two requests racing with the same new key still create only one event.
+
 ### `GET /v1/events`
 Query: `limit`, `cursor`, `event_type`, `created_after`, `created_before` (ISO datetimes) → paginated `EventSummary[]`
 
@@ -115,11 +143,17 @@ Query: `limit`, `cursor`, `event_type`, `created_after`, `created_before` (ISO d
 type DeliveryCounts = { total: number; pending: number; processing: number; retrying: number;
                         delivered: number; failed: number; cancelled: number }
 type EventSummary = { id: string; event_type: string; created_at: string; deliveries: DeliveryCounts }
-type Event = EventSummary & { data: Record<string, unknown> }
+type Event = EventSummary & { data: Record<string, unknown>; idempotency_key: string | null }
 ```
 
 ### `GET /v1/events/{id}` → `Event`
 ### `GET /v1/events/{id}/deliveries` → `{ "data": Delivery[] }`
+### `POST /v1/events/{id}/replay`
+Body (optional): `{ "endpoint_ids": ["ep_..."] }` to replay only deliveries to those endpoints.
+Replays every failed or cancelled delivery of the event (see [Replay](#replay)). Never creates a new event or new
+deliveries, even for endpoints added after the event was sent.
+`202` → `{ "replayed": { "replay": Replay, "delivery": Delivery }[], "skipped": { "delivery_id", "reason" }[] }`
+`409 nothing_to_replay` if none can be replayed (`details` lists the reasons).
 
 ## Deliveries
 
@@ -136,6 +170,8 @@ type Delivery = {
   last_status_code: number | null;
   last_error: string | null;             // human readable, e.g. "Destination returned HTTP 503"
   delivered_at: string | null;
+  replay_count: number; last_replayed_at: string | null;
+  replayable: boolean;                   // true when POST .../replay would be accepted right now
   created_at: string; updated_at: string
 }
 type Attempt = {
@@ -151,6 +187,31 @@ type Attempt = {
 Query: `limit`, `cursor`, `status`, `endpoint_id`, `event_id` → paginated `Delivery[]`
 ### `GET /v1/deliveries/{id}` → `Delivery`
 ### `GET /v1/deliveries/{id}/attempts` → `{ "data": Attempt[] }` (oldest first)
+### `POST /v1/deliveries/{id}/replay` → `202 { "replay": Replay, "delivery": Delivery }`
+### `GET /v1/deliveries/{id}/replays` → `{ "data": Replay[] }` (oldest first)
+
+```ts
+type Replay = {
+  id: string; delivery_id: string;
+  previous_status: "failed" | "cancelled";
+  first_attempt_number: number;   // attempts numbered from here on belong to this replay
+  requested_by: { type: "session" | "api_key"; api_key_id: string | null };
+  created_at: string
+}
+```
+
+### Replay
+
+A replay sends the **same** event to the same endpoint again: same event ID, same delivery ID, same body. Earlier
+attempts stay in the history, and new attempts continue the numbering (`HookFlow-Attempt: 2`, `3`, …).
+
+- Only `failed` and `cancelled` deliveries can be replayed. Anything else returns `409 not_replayable`. Once
+  replayed, a delivery is `pending` again, so repeating the request can't queue it twice.
+- The endpoint must be enabled and not deleted, and its current URL must pass today's URL rules. The current URL and
+  signing secret are used, so you can fix a wrong URL and then replay.
+- A replay gets a fresh retry budget: the endpoint's `max_attempts`, with the normal backoff (about 30s, 2m, …).
+- Replays are rate limited to 60 deliveries per minute per account. Replaying an event with 5 failed deliveries uses 5.
+- Every replay is recorded in `GET /v1/deliveries/{id}/replays` and in the audit log.
 
 ## Stats
 
@@ -164,6 +225,30 @@ type Stats = {
   series: { bucket: string; events: number; delivered: number; failed: number }[]  // hourly for 24h, daily otherwise
 }
 ```
+
+## Audit log
+
+### `GET /v1/audit-logs`
+Query: `limit`, `cursor`, `action`, `resource_id` → paginated `AuditLog[]`
+
+```ts
+type AuditLog = {
+  id: string; action: string;
+  actor: { type: "session" | "api_key"; api_key_id: string | null };
+  resource_type: string | null; resource_id: string | null;
+  details: Record<string, unknown> | null;   // never contains secrets or keys
+  ip_address: string | null; created_at: string
+}
+```
+
+| Action | When |
+| --- | --- |
+| `auth.registered`, `auth.login` | Account created, signed in |
+| `api_key.created`, `api_key.revoked` | API key changes |
+| `endpoint.created`, `endpoint.archived` | |
+| `endpoint.updated` | `details.changes` = `{ field: { from, to } }` |
+| `endpoint.secret_viewed`, `endpoint.secret_rotated` | Signing secret read or rotated |
+| `delivery.replayed`, `event.replayed` | Manual replays |
 
 ## Health (no auth)
 
@@ -179,9 +264,11 @@ type Stats = {
   them to skip events you have already processed.
 - Any 2xx response counts as success. Redirects are not followed.
 - Timeout: 10 seconds per attempt.
-- Retries: up to 5 attempts in total (the first try plus 4 retries). HookFlow retries on HTTP 408, 429 and 5xx, and on
-  connection errors and timeouts. The waits grow exponentially with random jitter: about 30s, 2m, 8m, 32m. Other 4xx
-  responses fail at once with no retry.
+- Retries: up to 5 attempts in total by default (the first try plus 4 retries); set `max_attempts` per endpoint
+  (1–10). HookFlow retries on HTTP 408, 429 and 5xx, and on connection errors and timeouts. The waits grow
+  exponentially with random jitter: about 30s, 2m, 8m, 32m, 2h (capped at 6h). A `Retry-After` header is honoured.
+  Other 4xx responses fail at once with no retry. Failed deliveries can be [replayed](#replay).
+- Retry times are stored in Postgres, so they survive restarts. Nothing is sent before its scheduled time.
 
 ### Request sent to your endpoint
 
@@ -194,7 +281,7 @@ HookFlow-Event-Type: order.created
 HookFlow-Delivery-Id: dlv_01J...
 HookFlow-Attempt: 1
 HookFlow-Timestamp: 1793361600
-HookFlow-Signature: v1=5f2b...
+HookFlow-Signature: v1=5f2b...        (two comma-separated values during a secret rotation grace period)
 
 {"id":"evt_01J...","type":"order.created","created_at":"2026-10-30T12:00:00Z","data":{...}}
 ```
@@ -206,7 +293,8 @@ keyed with your endpoint's full signing secret (including the `whsec_` prefix) a
 
 1. Read the **raw** body bytes before any JSON parsing. Re-serializing the JSON changes the bytes and breaks the check.
 2. Reject the request if the timestamp is more than 5 minutes from your clock. This stops old requests being replayed.
-3. Compute the HMAC and compare it to the header value using a constant-time comparison.
+3. Compute the HMAC and compare it to each `v1=` value in the header using a constant-time comparison. Accept the
+   request if any one matches. There are two values during a secret rotation grace period.
 
 ```python
 import hmac, hashlib, time

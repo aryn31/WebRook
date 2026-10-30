@@ -42,6 +42,7 @@ services:
   migrate:
     <<: *backend
     command: ["alembic", "upgrade", "head"]
+    volumes: ["./backend:/app"]
     restart: "no"
 
   api:
@@ -61,10 +62,11 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  # Runs the sweeper every few seconds. Run exactly one of these.
+  # Schedules the outbox publisher (every second) and the sweeper (every 5s). Run exactly one of these.
   beat:
     <<: *backend
     command: ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+    volumes: ["./backend:/app"]
     depends_on:
       migrate:
         condition: service_completed_successfully

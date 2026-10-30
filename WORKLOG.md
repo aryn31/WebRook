@@ -6,6 +6,112 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-10-30 — PRD updated to v1.1
+
+**Outcome:** The PRD now matches what was built. The original `HookFlow.pdf` (v1.0) is unchanged. The updated
+version is `docs/PRD.md` (editable source) and `docs/HookFlow-PRD-v1.1.pdf` (31 pages, exported from the Markdown).
+
+### Changed in the PRD
+- All original requirement text is kept. Additions are marked **Decision (v1.1)** or **Status (v1.1)**.
+- Recorded concrete behaviour for:
+  - the retry policy (codes, delays, per-endpoint limits)
+  - signature format and rotation grace
+  - idempotency keys
+  - replay rules and storm protection
+  - endpoint delete and disable
+  - delivery format and leases
+- Answered the open questions: subscriptions use exact matches plus `*`; deletion archives; retries can be customised
+  per endpoint (max attempts only). Still open: retention, deployment provider, and public vs invite-only (recommended:
+  invite-only until Milestone 3).
+- Added FR-14 (Audit Log), the full v1 API table (kept both replay endpoints with different scopes), and three new
+  data model entities (sessions, idempotency keys, delivery replays).
+- Rewrote the state machine as a diagram plus a transitions table, adding cancel, replay and lease-expiry.
+- Added status to every functional requirement, the SSRF and resource checklists, the release plan, and the
+  Definition of Done.
+- Added a "Known issues" list: the audit IP behind the proxy, and the attempt total growing after replays.
+  Milestone 4 gained pattern subscriptions, scoped API keys and bulk replay.
+- README links to the new PRD.
+
+### Checked
+- Rendered the PDF and checked the first page and the state-machine section visually.
+
+---
+
+## 2026-10-30 — Milestone 2 (Reliability)
+
+**Outcome:** All Milestone 2 items in the PRD are done. Transient failures are retried, duplicate ingestion is
+handled with idempotency keys, and unfinished work is recovered after a worker or Redis restart. This meets the PRD's
+Milestone 2 exit criteria.
+
+### Built
+- **Idempotency keys** on `POST /v1/events` (`Idempotency-Key` header):
+  - Same key and body → the original response with `Idempotent-Replayed: true`. Different body → `409 idempotency_key_reused`.
+  - Keys are per account and kept for 24h. Concurrent requests with the same key create one event.
+  - New table `idempotency_keys`.
+- **Transactional outbox** (`backend/app/outbox.py`, table `outbox`):
+  - Every queue message is written in the same transaction as its work: ingestion, retries, replays and crash recovery.
+  - The API publishes right after commit. A publisher task runs every 1s through beat and sends anything left over,
+    including retries that have come due.
+  - Events are accepted while Redis is down and are delivered once it's back.
+- **Manual replay**:
+  - API: `POST /v1/deliveries/{id}/replay`, `POST /v1/events/{id}/replay` (optional `endpoint_ids`), and
+    `GET /v1/deliveries/{id}/replays`.
+  - Behaviour: same event and delivery ID, old attempts kept, numbering continues, fresh retry budget with normal backoff.
+  - Rules: only failed or cancelled deliveries; the endpoint must be enabled; the current URL rules apply.
+    Rate limit: 60 deliveries a minute per account.
+  - New table `delivery_replays`.
+- **Per-endpoint `max_attempts`** (1–10, default 5). It applies to new deliveries.
+- **Secret rotation grace period** (default 24h, 0–7 days). Both secrets sign during it (`v1=<new>,v1=<old>`).
+- **Audit log** (`audit_logs` table, `GET /v1/audit-logs`). Records register, login, API key changes, endpoint
+  create/update (field-level changes)/archive, secret viewed or rotated, and replays. Secrets are never stored in it.
+- **Sweeper housekeeping:**
+  - Deletes published outbox rows older than 1 day and expired idempotency keys.
+  - Re-stages work whose published message was lost in Redis.
+- **Dashboard** (built by a helper agent):
+  - Replay buttons with inline confirmation, on event detail, deliveries and endpoint pages. Includes "Replay failed
+    deliveries" for a whole event.
+  - Replay markers in the attempt history.
+  - Max attempts on the endpoint forms.
+  - A rotate-secret grace picker and a grace-period banner.
+  - A new Audit log page with filters; the idempotency key shows on the event page.
+- Migration `0002_reliability`. Docs updated in `docs/api.md` and `README.md`.
+
+### Decisions
+- **Replay resets the same delivery** rather than creating a new one, so the event ID, history and dashboard links stay
+  the same. Each delivery has `retry_base_attempt`, so backoff and "gave up after N" count from the last replay.
+- **A dedicated outbox table** replaced the M1 approach of re-queuing from the deliveries table. The PRD asks for it
+  explicitly, and it makes "Redis was down" recoverable in a way that can be inspected.
+- **The secret is only fetched when Reveal is clicked**, because each view is now audited.
+- `docker-compose.yml`: `migrate` and `beat` now mount `./backend` like `api` and `worker`. They had been running a
+  stale image without the new code.
+
+### Bugs found and fixed
+- `migrate` and `beat` ran an old image ("Can't locate revision 0002", and no outbox schedule). Fixed by mounting the
+  source folder and rebuilding.
+- The endpoint response showed a grace-period end time even after it had passed. It's now null once expired.
+
+### Checked
+- `docker compose run --rm api pytest -q`: **86 passed**. 26 tests are new, in `tests/test_reliability.py`.
+- Live run: same key twice gave the same event; a different body gave 409; a 400 delivery failed; after fixing the
+  URL, replay delivered it as attempt 2; a second replay gave 409; the audit trail was correct.
+- Live outage test: with Redis stopped, an event was accepted in 9ms and its message waited in the outbox. After
+  Redis restarted it was published and delivered.
+- Migration upgrades and downgrades cleanly; `alembic check` shows no drift.
+- Dashboard: `npm run build` passes. The helper agent checked replay, rotation, audit log and forms in headless Chrome.
+
+### Left to do / known issues
+- **Audit IPs for dashboard actions** show the frontend container's IP, because the API sees the Next.js proxy, not
+  the browser. The fix is to trust `X-Forwarded-For` only from the proxy (uvicorn `--proxy-headers
+  --forwarded-allow-ips`), which needs a fixed network setup. Moved to Milestone 3 deployment work.
+- `max_attempts` on a delivery is a running total: each replay adds the endpoint's limit. After many replays the UI
+  can show something like "63/65". It's correct but could read better.
+- **Milestone 3:** DNS-rebinding IP pinning, egress rules, ingestion and per-account rate limits, Prometheus metrics,
+  load tests, retention for events and attempts, production deployment.
+- Dev data: test accounts `m2-smoke-*`, `m2-outage-*` and `dash-m2-92396361@example.com` were added to the local DB.
+- The project still isn't a git repository.
+
+---
+
 ## 2026-10-30 — Milestone 1 (Core MVP)
 
 Also started this work log. Every work session from now on ends with an entry here.

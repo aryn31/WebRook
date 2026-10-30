@@ -53,14 +53,9 @@ def _clean():
 
 @pytest.fixture(autouse=True)
 def queued(monkeypatch) -> list[str]:
-    """Capture queue publishes instead of sending them to Redis."""
+    """Capture queue publishes (from the outbox) instead of sending them to Redis."""
     sent: list[str] = []
-
-    def fake_enqueue(delivery_id: str) -> bool:
-        sent.append(delivery_id)
-        return True
-
-    monkeypatch.setattr("app.routers.events.enqueue_delivery", fake_enqueue)
+    monkeypatch.setattr("app.queue.send_delivery", sent.append)
     return sent
 
 

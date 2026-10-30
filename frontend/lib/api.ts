@@ -21,9 +21,19 @@ export type Endpoint = {
   description: string | null;
   enabled: boolean;
   event_types: string[];
+  /** Attempts per delivery, including the first (1–10). Only affects new deliveries. */
+  max_attempts: number;
+  /** While in the future, the previous secret still signs alongside the new one. */
+  previous_secret_expires_at: string | null;
   created_at: string;
   updated_at: string;
 };
+
+export const MAX_ATTEMPTS_MIN = 1;
+export const MAX_ATTEMPTS_MAX = 10;
+export const MAX_ATTEMPTS_DEFAULT = 5;
+
+export type SigningSecret = { signing_secret: string; previous_secret_expires_at: string | null };
 
 export type EndpointWithSecret = Endpoint & { signing_secret: string };
 
@@ -44,7 +54,7 @@ export type EventSummary = {
   deliveries: DeliveryCounts;
 };
 
-export type HookEvent = EventSummary & { data: Record<string, unknown> };
+export type HookEvent = EventSummary & { data: Record<string, unknown>; idempotency_key: string | null };
 
 export type EventAccepted = {
   event_id: string;
@@ -83,8 +93,69 @@ export type Delivery = {
   last_status_code: number | null;
   last_error: string | null;
   delivered_at: string | null;
+  replay_count: number;
+  last_replayed_at: string | null;
+  /** True when a replay would be accepted now (failed/cancelled, endpoint enabled and not archived). */
+  replayable: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type Actor = { type: "session" | "api_key"; api_key_id: string | null };
+
+export type Replay = {
+  id: string;
+  delivery_id: string;
+  previous_status: DeliveryStatus;
+  /** Attempts with attempt_number >= this came after the replay. */
+  first_attempt_number: number;
+  requested_by: Actor;
+  created_at: string;
+};
+
+export type DeliveryReplayed = { replay: Replay; delivery: Delivery };
+
+export type ReplaySkipped = { delivery_id: string; reason: string };
+
+export type EventReplayed = { replayed: DeliveryReplayed[]; skipped: ReplaySkipped[] };
+
+export type AuditAction =
+  | "auth.registered"
+  | "auth.login"
+  | "api_key.created"
+  | "api_key.revoked"
+  | "endpoint.created"
+  | "endpoint.updated"
+  | "endpoint.archived"
+  | "endpoint.secret_viewed"
+  | "endpoint.secret_rotated"
+  | "delivery.replayed"
+  | "event.replayed";
+
+export const AUDIT_ACTIONS: AuditAction[] = [
+  "auth.registered",
+  "auth.login",
+  "api_key.created",
+  "api_key.revoked",
+  "endpoint.created",
+  "endpoint.updated",
+  "endpoint.archived",
+  "endpoint.secret_viewed",
+  "endpoint.secret_rotated",
+  "delivery.replayed",
+  "event.replayed",
+];
+
+export type AuditLog = {
+  id: string;
+  /** Usually an AuditAction; kept as string so unknown future actions still render. */
+  action: string;
+  actor: Actor;
+  resource_type: string | null;
+  resource_id: string | null;
+  details: Record<string, unknown> | null;
+  ip_address: string | null;
+  created_at: string;
 };
 
 export type Attempt = {
@@ -118,13 +189,16 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details: unknown;
+  /** Seconds from the Retry-After header (429 responses), if any. */
+  readonly retryAfter: number | null;
 
-  constructor(status: number, code: string, message: string, details: unknown = null) {
+  constructor(status: number, code: string, message: string, details: unknown = null, retryAfter: number | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.details = details;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -165,8 +239,14 @@ export function describeDetails(details: unknown): string[] {
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     switch (err.code) {
-      case "rate_limited":
-        return err.message || "Too many attempts. Wait a minute and try again.";
+      case "rate_limited": {
+        const base = err.message || "Too many attempts. Wait a minute and try again.";
+        return err.retryAfter != null && !/\d+\s*s/.test(base) ? `${base} Try again in ${err.retryAfter}s.` : base;
+      }
+      case "not_replayable":
+        return err.message || "This delivery can't be replayed right now.";
+      case "nothing_to_replay":
+        return err.message || "None of this event's deliveries can be replayed.";
       case "payload_too_large":
         return err.message || "Payload is too large (limit is 1 MiB).";
       default:
@@ -246,7 +326,14 @@ export async function request<T>(
       redirectToLogin();
     }
     if (e && typeof e === "object") {
-      throw new ApiError(res.status, e.code ?? "error", e.message ?? `Request failed (HTTP ${res.status}).`, e.details ?? null);
+      const ra = Number(res.headers.get("Retry-After"));
+      throw new ApiError(
+        res.status,
+        e.code ?? "error",
+        e.message ?? `Request failed (HTTP ${res.status}).`,
+        e.details ?? null,
+        Number.isFinite(ra) && ra > 0 ? Math.ceil(ra) : null,
+      );
     }
     if (res.status === 502 || res.status === 503 || res.status === 504 || res.status === 500) {
       throw new ApiError(
@@ -282,18 +369,34 @@ export const api = {
   // Endpoints
   listEndpoints: (q: { limit?: number; cursor?: string | null } = {}) =>
     request<Page<Endpoint>>("GET", "/endpoints", { query: q }),
-  createEndpoint: (body: { url: string; description?: string; event_types: string[]; enabled?: boolean }) =>
+  createEndpoint: (body: {
+    url: string;
+    description?: string;
+    event_types: string[];
+    enabled?: boolean;
+    max_attempts?: number;
+  }) =>
     request<EndpointWithSecret>("POST", "/endpoints", { body }),
   getEndpoint: (id: string) => request<Endpoint>("GET", `/endpoints/${encodeURIComponent(id)}`),
   updateEndpoint: (
     id: string,
-    body: Partial<{ url: string; description: string | null; event_types: string[]; enabled: boolean }>,
+    body: Partial<{
+      url: string;
+      description: string | null;
+      event_types: string[];
+      enabled: boolean;
+      max_attempts: number;
+    }>,
   ) => request<Endpoint>("PATCH", `/endpoints/${encodeURIComponent(id)}`, { body }),
   archiveEndpoint: (id: string) => request<void>("DELETE", `/endpoints/${encodeURIComponent(id)}`),
+  /** Writes an `endpoint.secret_viewed` audit entry — only call on an explicit "Reveal". */
   getEndpointSecret: (id: string) =>
-    request<{ signing_secret: string }>("GET", `/endpoints/${encodeURIComponent(id)}/secret`),
-  rotateEndpointSecret: (id: string) =>
-    request<{ signing_secret: string }>("POST", `/endpoints/${encodeURIComponent(id)}/rotate-secret`),
+    request<SigningSecret>("GET", `/endpoints/${encodeURIComponent(id)}/secret`),
+  /** grace_period_seconds: 0–604800; the API defaults to 86400 (24h) when omitted. */
+  rotateEndpointSecret: (id: string, grace_period_seconds?: number) =>
+    request<SigningSecret>("POST", `/endpoints/${encodeURIComponent(id)}/rotate-secret`, {
+      body: grace_period_seconds === undefined ? {} : { grace_period_seconds },
+    }),
 
   // Events
   sendEvent: (event_type: string, data: Record<string, unknown>) =>
@@ -310,6 +413,11 @@ export const api = {
   getEvent: (id: string) => request<HookEvent>("GET", `/events/${encodeURIComponent(id)}`),
   getEventDeliveries: (id: string) =>
     request<List<Delivery>>("GET", `/events/${encodeURIComponent(id)}/deliveries`),
+  /** Replays the event's failed/cancelled deliveries (optionally only to some endpoints). */
+  replayEvent: (id: string, endpoint_ids?: string[]) =>
+    request<EventReplayed>("POST", `/events/${encodeURIComponent(id)}/replay`, {
+      body: endpoint_ids ? { endpoint_ids } : {},
+    }),
 
   // Deliveries
   listDeliveries: (
@@ -324,6 +432,15 @@ export const api = {
   getDelivery: (id: string) => request<Delivery>("GET", `/deliveries/${encodeURIComponent(id)}`),
   getAttempts: (id: string) =>
     request<List<Attempt>>("GET", `/deliveries/${encodeURIComponent(id)}/attempts`),
+  replayDelivery: (id: string) =>
+    request<DeliveryReplayed>("POST", `/deliveries/${encodeURIComponent(id)}/replay`),
+  /** Oldest first. */
+  getReplays: (id: string) => request<List<Replay>>("GET", `/deliveries/${encodeURIComponent(id)}/replays`),
+
+  // Audit log
+  listAuditLogs: (
+    q: { limit?: number; cursor?: string | null; action?: string; resource_id?: string } = {},
+  ) => request<Page<AuditLog>>("GET", "/audit-logs", { query: q }),
 
   // Stats
   stats: (range: StatsRange) => request<Stats>("GET", "/stats", { query: { range } }),

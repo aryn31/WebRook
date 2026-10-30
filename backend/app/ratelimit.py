@@ -15,8 +15,10 @@ def get_redis() -> redis.Redis:
     return redis.Redis.from_url(get_settings().redis_url, socket_timeout=1, socket_connect_timeout=1)
 
 
-def enforce(bucket: str, limit: int, window_seconds: int = 60) -> None:
+def enforce(bucket: str, limit: int, window_seconds: int = 60, cost: int = 1) -> None:
     """Fixed-window limiter. Raises 429 when ``bucket`` exceeds ``limit`` per window.
+
+    ``cost`` lets one request use up several units (e.g. replaying 10 deliveries at once costs 10).
 
     Fails open if Redis is unreachable: a Redis outage should not lock everyone out of login.
     """
@@ -24,7 +26,7 @@ def enforce(bucket: str, limit: int, window_seconds: int = 60) -> None:
     key = f"rl:{bucket}:{window}"
     try:
         pipe = get_redis().pipeline()
-        pipe.incr(key)
+        pipe.incrby(key, cost)
         pipe.expire(key, window_seconds + 1)
         count = int(pipe.execute()[0])
     except redis.RedisError:

@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter
 from sqlalchemy import select
 
+from app import audit
 from app.deps import DB, SessionPrincipal
 from app.errors import not_found
 from app.models import ApiKey
@@ -23,6 +24,8 @@ def create_key(body: ApiKeyIn, principal: SessionPrincipal, db: DB) -> dict:
     full_key, prefix, key_hash = new_api_key()
     key = ApiKey(user_id=principal.user.id, name=body.name.strip(), prefix=prefix, key_hash=key_hash)
     db.add(key)
+    db.flush()
+    audit.record(db, principal, "api_key.created", "api_key", key.id, {"name": key.name, "prefix": prefix})
     db.commit()
     return {"api_key": key, "key": full_key}
 
@@ -34,5 +37,6 @@ def revoke_key(key_id: str, principal: SessionPrincipal, db: DB) -> dict:
         raise not_found("API key")
     if key.revoked_at is None:
         key.revoked_at = datetime.now(UTC)
+        audit.record(db, principal, "api_key.revoked", "api_key", key.id, {"name": key.name, "prefix": key.prefix})
         db.commit()
     return {"api_key": key}

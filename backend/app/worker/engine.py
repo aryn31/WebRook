@@ -3,8 +3,11 @@
 Postgres is the source of truth for delivery work; Redis/Celery only carries "go look at delivery X" messages.
 
 - ``process_delivery`` atomically claims one due delivery (a lease), sends it, and records the outcome.
-- ``sweep`` runs every few seconds. It re-queues due work (new deliveries whose queue message was lost,
-  and retries whose time has come) and reclaims deliveries whose worker died mid-attempt.
+  A scheduled retry is written to the outbox in the same transaction as the result.
+- ``sweep`` runs every few seconds. It reclaims deliveries whose worker died mid-attempt, and re-queues due
+  work whose queue message was published but then lost (e.g. Redis restarted without persistence).
+
+All queue messages go through the transactional outbox (app/outbox.py).
 
 Because a worker can die after the destination got the request but before the result was saved,
 delivery is at-least-once. The event ID stays the same so receivers can de-duplicate.
@@ -18,12 +21,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from sqlalchemy import or_, select, update
+from sqlalchemy import delete, exists, or_, select, tuple_, update
 from sqlalchemy.orm import lazyload
 
+from app import outbox
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import Delivery, DeliveryAttempt, DeliveryStatus
+from app.models import Delivery, DeliveryAttempt, DeliveryStatus, IdempotencyKey, OutboxMessage
 from app.security import decrypt_secret
 from app.signing import sign
 from app.urlguard import UnsafeDestination, check_destination
@@ -33,6 +37,8 @@ log = logging.getLogger("hookflow.worker")
 
 DUE_STATUSES = (DeliveryStatus.PENDING, DeliveryStatus.RETRYING)
 REQUEUE_AFTER = timedelta(seconds=60)
+# Published outbox messages are kept this long (for debugging), then deleted by the sweeper.
+OUTBOX_KEEP = timedelta(days=1)
 
 
 @dataclass
@@ -145,7 +151,13 @@ def process_delivery(delivery_id: str) -> str:
             db.commit()
             return "cancelled"
 
-        secret = decrypt_secret(endpoint.secret_encrypted)
+        secrets = [decrypt_secret(endpoint.secret_encrypted)]
+        # During a rotation's grace period, also sign with the old secret so receivers that haven't
+        # switched yet keep verifying. The header then carries two signatures: "v1=<new>,v1=<old>".
+        if endpoint.previous_secret_encrypted and endpoint.previous_secret_expires_at and (
+            endpoint.previous_secret_expires_at > _now()
+        ):
+            secrets.append(decrypt_secret(endpoint.previous_secret_encrypted))
         url = endpoint.url
         body = build_body(event.id, event.event_type, event.created_at, event.payload)
 
@@ -158,7 +170,7 @@ def process_delivery(delivery_id: str) -> str:
         "HookFlow-Delivery-Id": delivery_id,
         "HookFlow-Attempt": str(attempt_number),
         "HookFlow-Timestamp": str(timestamp),
-        "HookFlow-Signature": sign(secret, timestamp, body),
+        "HookFlow-Signature": ",".join(sign(secret, timestamp, body) for secret in secrets),
     }
 
     started = _now()
@@ -185,22 +197,27 @@ def _record(delivery_id: str, attempt_number: int, started: datetime, duration_m
                 success=o.success,
             )
         )
-        max_attempts = db.scalar(select(Delivery.max_attempts).where(Delivery.id == delivery_id))
+        max_attempts, base = db.execute(
+            select(Delivery.max_attempts, Delivery.retry_base_attempt).where(Delivery.id == delivery_id)
+        ).one()
+        # Attempts in the current run: since creation, or since the last manual replay.
+        run_attempt = attempt_number - base
         values: dict = {"locked_until": None, "last_status_code": o.status_code}
+        next_at: datetime | None = None
         if o.success:
             values |= {"status": DeliveryStatus.DELIVERED, "delivered_at": now, "last_error": None}
-        elif o.retryable and attempt_number < (max_attempts or 0):
-            delay = retry_delay_seconds(attempt_number, o.retry_after)
+        elif o.retryable and attempt_number < max_attempts:
+            next_at = now + timedelta(seconds=retry_delay_seconds(run_attempt, o.retry_after))
             values |= {
                 "status": DeliveryStatus.RETRYING,
-                "next_attempt_at": now + timedelta(seconds=delay),
+                "next_attempt_at": next_at,
                 "enqueued_at": None,
                 "last_error": o.error,
             }
         else:
             error = o.error or "Delivery failed."
             if o.retryable:
-                error += f" Gave up after {attempt_number} attempts."
+                error += f" Gave up after {run_attempt} attempts."
             values |= {"status": DeliveryStatus.FAILED, "last_error": error}
 
         # Only apply if we still hold the lease. If the sweeper already reclaimed it, keep the attempt
@@ -213,6 +230,8 @@ def _record(delivery_id: str, attempt_number: int, started: datetime, duration_m
         )
         if result.rowcount == 0:
             log.warning("Lease lost before result was recorded", extra={"delivery_id": delivery_id})
+        elif next_at is not None:
+            outbox.add(db, [delivery_id], available_at=next_at)
         db.commit()
     log.info(
         "delivery attempt",
@@ -227,9 +246,8 @@ def _record(delivery_id: str, attempt_number: int, started: datetime, duration_m
     )
 
 
-def sweep(enqueue: Callable[[str], object], batch_size: int = 500) -> dict[str, int]:
+def sweep(batch_size: int = 500) -> dict[str, int]:
     now = _now()
-    reclaimed = 0
     with SessionLocal() as db:
         # 1. Reclaim deliveries whose worker lease expired (worker crashed or hung).
         stuck = db.scalars(
@@ -239,6 +257,7 @@ def sweep(enqueue: Callable[[str], object], batch_size: int = 500) -> dict[str, 
             .limit(batch_size)
             .with_for_update(skip_locked=True, of=Delivery)
         ).all()
+        retry_ids: list[str] = []
         for d in stuck:
             db.add(
                 DeliveryAttempt(
@@ -254,38 +273,53 @@ def sweep(enqueue: Callable[[str], object], batch_size: int = 500) -> dict[str, 
             d.enqueued_at = None
             if d.attempt_count >= d.max_attempts:
                 d.status = DeliveryStatus.FAILED
-                d.last_error = f"Worker stopped during the final attempt. Gave up after {d.attempt_count} attempts."
+                d.last_error = (
+                    "Worker stopped during the final attempt. "
+                    f"Gave up after {d.attempt_count - d.retry_base_attempt} attempts."
+                )
             else:
                 d.status = DeliveryStatus.RETRYING
                 d.next_attempt_at = now
                 d.last_error = "Worker stopped during the attempt; retrying."
-            reclaimed += 1
+                retry_ids.append(d.id)
+        outbox.add(db, retry_ids)
         db.commit()
 
-        # 2. Queue due work that isn't already queued (or whose queue message was lost).
-        due_ids = db.scalars(
+        # 2. Safety net: due work that was published a while ago but never picked up (the message was lost
+        #    in Redis) and has no unpublished outbox message waiting. Stage a fresh message for it.
+        waiting = exists().where(OutboxMessage.delivery_id == Delivery.id, OutboxMessage.published_at.is_(None))
+        lost_ids = db.scalars(
             select(Delivery.id)
             .where(
                 Delivery.status.in_(DUE_STATUSES),
                 Delivery.next_attempt_at <= now,
                 or_(Delivery.enqueued_at.is_(None), Delivery.enqueued_at < now - REQUEUE_AFTER),
+                ~waiting,
             )
             .order_by(Delivery.next_attempt_at)
             .limit(batch_size)
             .with_for_update(skip_locked=True)
         ).all()
-        if due_ids:
-            db.execute(update(Delivery).where(Delivery.id.in_(due_ids)).values(enqueued_at=now))
+        if lost_ids:
+            outbox.add(db, lost_ids)
+            # Counts as queued from now, so the next sweep doesn't stage it again straight away.
+            db.execute(update(Delivery).where(Delivery.id.in_(lost_ids)).values(enqueued_at=now))
         db.commit()
 
-    queued = 0
-    for delivery_id in due_ids:
-        try:
-            enqueue(delivery_id)
-            queued += 1
-        except Exception:  # broker down: the next sweep after REQUEUE_AFTER will try again
-            log.exception("Failed to enqueue delivery", extra={"delivery_id": delivery_id})
-            break
-    if reclaimed or queued:
-        log.info("sweep", extra={"reclaimed": reclaimed, "queued": queued})
-    return {"reclaimed": reclaimed, "queued": queued}
+        # 3. Housekeeping: old published outbox messages and expired idempotency keys, a batch at a time.
+        old_messages = select(OutboxMessage.id).where(OutboxMessage.published_at < now - OUTBOX_KEEP).limit(batch_size)
+        cleaned = db.execute(delete(OutboxMessage).where(OutboxMessage.id.in_(old_messages))).rowcount
+        expired_keys = (
+            select(IdempotencyKey.user_id, IdempotencyKey.key).where(IdempotencyKey.expires_at < now).limit(batch_size)
+        )
+        cleaned += db.execute(
+            delete(IdempotencyKey).where(
+                tuple_(IdempotencyKey.user_id, IdempotencyKey.key).in_(expired_keys)
+            )
+        ).rowcount
+        db.commit()
+
+    result = {"reclaimed": len(stuck), "requeued": len(lost_ids), "cleaned": cleaned}
+    if len(stuck) or lost_ids:
+        log.info("sweep", extra=result)
+    return result

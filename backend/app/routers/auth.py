@@ -4,9 +4,9 @@ from fastapi import APIRouter, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from app import ratelimit
+from app import audit, ratelimit
 from app.config import get_settings
-from app.deps import DB, SessionPrincipal
+from app.deps import DB, Principal, SessionPrincipal
 from app.errors import ApiError
 from app.models import User, UserSession
 from app.schemas import Credentials, RegisterIn, UserEnvelope, UserOut
@@ -25,7 +25,7 @@ def _limit(request: Request, action: str, email: str) -> None:
     ratelimit.enforce(f"auth:{action}:email:{sha256_hex(email.lower())}", limit)
 
 
-def _start_session(db: DB, response: Response, user: User) -> None:
+def _start_session(db: DB, request: Request, response: Response, user: User, action: str) -> None:
     s = get_settings()
     token = new_session_token()
     db.add(
@@ -35,6 +35,7 @@ def _start_session(db: DB, response: Response, user: User) -> None:
             expires_at=datetime.now(UTC) + timedelta(hours=s.session_ttl_hours),
         )
     )
+    audit.record(db, Principal(user=user, via="session", ip=_client_ip(request)), action, "user", user.id)
     db.commit()
     response.set_cookie(
         s.session_cookie_name,
@@ -58,7 +59,7 @@ def register(body: RegisterIn, request: Request, response: Response, db: DB) -> 
     except IntegrityError:
         db.rollback()
         raise ApiError(409, "An account with this email already exists.", code="email_taken") from None
-    _start_session(db, response, user)
+    _start_session(db, request, response, user, "auth.registered")
     return {"user": UserOut.model_validate(user)}
 
 
@@ -69,7 +70,7 @@ def login(body: Credentials, request: Request, response: Response, db: DB) -> di
     user = db.scalar(select(User).where(func.lower(User.email) == email))
     if not verify_password(user.password_hash if user else None, body.password) or user is None:
         raise ApiError(401, "Incorrect email or password.", code="invalid_credentials")
-    _start_session(db, response, user)
+    _start_session(db, request, response, user, "auth.login")
     return {"user": UserOut.model_validate(user)}
 
 

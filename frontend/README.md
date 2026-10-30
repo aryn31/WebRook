@@ -55,4 +55,16 @@ docker-compose example:
 - `lib/format.ts` – time formatting (local time, UTC on hover) and human-readable delivery explanations
 - `middleware.ts` – redirects to `/login` when there is no `hf_session` cookie (the API's 401 is the real check)
 - `app/(auth)` – login / register
-- `app/(dash)` – overview, events, deliveries, endpoints, API keys
+- `app/(dash)` – overview, events, deliveries, endpoints, API keys, audit log
+- `components/DeliveryTable.tsx` – delivery rows with a Replay action (when `replayable`) and attempt history with "Replayed" markers
+
+## Pages
+
+| Route | What it shows |
+| --- | --- |
+| `/` | Overview: onboarding checklist, stats chart, recent failed deliveries |
+| `/events`, `/events/[id]` | Events; event detail with payload, idempotency key, deliveries, per-delivery Replay and "Replay failed deliveries" |
+| `/deliveries` | All deliveries with status tabs (e.g. `?status=failed`) and per-row Replay |
+| `/endpoints`, `/endpoints/[id]` | Endpoints with max attempts (1–10); detail page with edit, secret reveal (audited, only on click), rotation with a grace period, test event, deliveries |
+| `/api-keys` | Create / revoke API keys |
+| `/audit-log` | Account audit trail, filter by `?action=` and `?resource_id=`, cursor pagination |

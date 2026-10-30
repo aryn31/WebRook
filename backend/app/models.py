@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    PrimaryKeyConstraint,
     String,
     Text,
     UniqueConstraint,
@@ -79,6 +80,11 @@ class Endpoint(Base):
     description: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     secret_encrypted: Mapped[str] = mapped_column(Text)
+    # After a rotation, the old secret keeps signing (as a second signature) until this time.
+    previous_secret_encrypted: Mapped[str | None] = mapped_column(Text)
+    previous_secret_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Attempts per delivery for new deliveries to this endpoint, including the first.
+    max_attempts: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
     created_at: Mapped[datetime] = _now_col()
     updated_at: Mapped[datetime] = _now_col(onupdate=func.now())
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -109,6 +115,7 @@ class Event(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     event_type: Mapped[str] = mapped_column(String(100))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = _now_col()
 
     __table_args__ = (
@@ -135,6 +142,11 @@ class Delivery(Base):
     last_status_code: Mapped[int | None] = mapped_column(Integer)
     last_error: Mapped[str | None] = mapped_column(Text)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # attempt_count when the current run of attempts began (0, or the count at the last replay).
+    # Retry backoff and the "gave up after N attempts" message count from here.
+    retry_base_attempt: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    replay_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_replayed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _now_col()
     updated_at: Mapped[datetime] = _now_col(onupdate=func.now())
 
@@ -171,3 +183,85 @@ class DeliveryAttempt(Base):
     success: Mapped[bool] = mapped_column(Boolean, default=False)
 
     __table_args__ = (Index("ix_delivery_attempts_delivery_id", "delivery_id", "attempt_number"),)
+
+
+class IdempotencyKey(Base):
+    """Remembers an ``Idempotency-Key`` sent to ``POST /v1/events`` so a retried request returns the same event."""
+
+    __tablename__ = "idempotency_keys"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    key: Mapped[str] = mapped_column(String(255))
+    # SHA-256 of the canonical request (event type + data). A different request with the same key is a conflict.
+    request_hash: Mapped[str] = mapped_column(String(64))
+    event_id: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = _now_col()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        PrimaryKeyConstraint("user_id", "key", name="pk_idempotency_keys"),
+        Index("ix_idempotency_keys_expires_at", "expires_at"),
+    )
+
+
+class OutboxMessage(Base):
+    """A queue message waiting to be published ("deliver dlv_...").
+
+    Written in the same transaction as the work it announces, then published to Redis by the API right after
+    commit or by the outbox publisher. If Redis is down, nothing is lost: the row waits here.
+    """
+
+    __tablename__ = "outbox"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("obx"))
+    delivery_id: Mapped[str] = mapped_column(ForeignKey("deliveries.id", ondelete="CASCADE"))
+    # Not published before this time (used for scheduled retries).
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _now_col()
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    publish_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("ix_outbox_unpublished", "available_at", postgresql_where="published_at IS NULL"),
+        Index("ix_outbox_delivery_id", "delivery_id"),
+    )
+
+
+class DeliveryReplay(Base):
+    """One manual replay of a delivery. Attempts from ``first_attempt_number`` on belong to it."""
+
+    __tablename__ = "delivery_replays"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("rpl"))
+    delivery_id: Mapped[str] = mapped_column(ForeignKey("deliveries.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    actor_type: Mapped[str] = mapped_column(String(16))  # "session" or "api_key"
+    api_key_id: Mapped[str | None] = mapped_column(ForeignKey("api_keys.id", ondelete="SET NULL"))
+    previous_status: Mapped[str] = mapped_column(String(16))
+    first_attempt_number: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = _now_col()
+
+    __table_args__ = (Index("ix_delivery_replays_delivery_id", "delivery_id", "id"),)
+
+
+class AuditLog(Base):
+    """Important account actions: key and endpoint changes, secret access, replays, logins."""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("aud"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    actor_type: Mapped[str] = mapped_column(String(16))  # "session" or "api_key"
+    api_key_id: Mapped[str | None] = mapped_column(ForeignKey("api_keys.id", ondelete="SET NULL"))
+    action: Mapped[str] = mapped_column(String(64))
+    resource_type: Mapped[str | None] = mapped_column(String(32))
+    resource_id: Mapped[str | None] = mapped_column(String(32))
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    ip_address: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = _now_col()
+
+    __table_args__ = (
+        Index("ix_audit_logs_user_id_id", "user_id", "id"),
+        Index("ix_audit_logs_resource_id", "resource_id"),
+    )

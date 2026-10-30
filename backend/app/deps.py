@@ -21,6 +21,7 @@ class Principal:
     via: Literal["session", "api_key"]
     session: UserSession | None = None
     api_key: ApiKey | None = None
+    ip: str | None = None
 
 
 def _from_api_key(db: Session, raw_key: str) -> Principal | None:
@@ -48,6 +49,12 @@ def _from_session(db: Session, token: str) -> Principal | None:
 
 
 def get_principal(request: Request, db: DB) -> Principal:
+    principal = _authenticate(request, db)
+    principal.ip = request.client.host if request.client else None
+    return principal
+
+
+def _authenticate(request: Request, db: Session) -> Principal:
     auth = request.headers.get("authorization")
     if auth:
         scheme, _, token = auth.partition(" ")

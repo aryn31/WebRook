@@ -3,11 +3,13 @@ from typing import Annotated
 from fastapi import APIRouter, Query
 from sqlalchemy import select
 
+from app import outbox
 from app.deps import DB, CurrentPrincipal
-from app.errors import not_found
-from app.models import Delivery, DeliveryAttempt, DeliveryStatus
+from app.errors import ApiError, not_found
+from app.models import Delivery, DeliveryAttempt, DeliveryReplay, DeliveryStatus
 from app.pagination import Cursor, Limit, paginate
-from app.schemas import AttemptOut, DeliveryOut, ListOf, Page
+from app.replay import enforce_rate_limit, replay, replay_out, why_not_replayable
+from app.schemas import AttemptOut, DeliveryOut, DeliveryReplayed, ListOf, Page, ReplayOut
 
 router = APIRouter(prefix="/v1/deliveries", tags=["deliveries"])
 
@@ -26,6 +28,9 @@ def delivery_out(d: Delivery) -> DeliveryOut:
         last_status_code=d.last_status_code,
         last_error=d.last_error,
         delivered_at=d.delivered_at,
+        replay_count=d.replay_count,
+        last_replayed_at=d.last_replayed_at,
+        replayable=why_not_replayable(d) is None,
         created_at=d.created_at,
         updated_at=d.updated_at,
     )
@@ -73,3 +78,30 @@ def list_attempts(delivery_id: str, principal: CurrentPrincipal, db: DB) -> dict
         .order_by(DeliveryAttempt.attempt_number, DeliveryAttempt.started_at)
     ).all()
     return {"data": rows}
+
+
+@router.post("/{delivery_id}/replay", status_code=202, response_model=DeliveryReplayed)
+def replay_delivery(delivery_id: str, principal: CurrentPrincipal, db: DB) -> dict:
+    d = _owned(db, principal, delivery_id)
+    reason = why_not_replayable(d)
+    if reason:
+        raise ApiError(409, reason, code="not_replayable")
+    enforce_rate_limit(principal.user.id, 1)
+    r = replay(db, principal, d)
+    if r is None:
+        raise ApiError(409, "This delivery changed while it was being replayed. Refresh and try again.",
+                       code="not_replayable")
+    message_ids = outbox.add(db, [d.id])
+    db.commit()
+    outbox.publish_ids(message_ids)
+    db.refresh(d)
+    return {"replay": replay_out(r), "delivery": delivery_out(d)}
+
+
+@router.get("/{delivery_id}/replays", response_model=ListOf[ReplayOut])
+def list_replays(delivery_id: str, principal: CurrentPrincipal, db: DB) -> dict:
+    _owned(db, principal, delivery_id)
+    rows = db.scalars(
+        select(DeliveryReplay).where(DeliveryReplay.delivery_id == delivery_id).order_by(DeliveryReplay.id)
+    ).all()
+    return {"data": [replay_out(r) for r in rows]}

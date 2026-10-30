@@ -5,7 +5,7 @@ import pytest
 import respx
 from sqlalchemy import select, update
 
-from app import signing
+from app import outbox, signing
 from app.db import SessionLocal
 from app.models import Delivery, DeliveryAttempt
 from app.worker.engine import process_delivery, sweep
@@ -170,18 +170,19 @@ def test_only_one_worker_can_claim(setup):
     assert _delivery(dlv).status == "processing"
 
 
-def test_sweep_requeues_lost_work(setup):
+def test_sweep_requeues_lost_work(setup, queued):
     _, _, dlv, _ = setup
-    sent: list[str] = []
-    assert sweep(sent.append)["queued"] == 0  # API just queued it; don't double-queue
+    assert queued == [dlv]  # published by the API right after commit
+    assert sweep()["requeued"] == 0  # just published; don't double-queue
 
-    # Simulate the queue message being lost a while ago.
+    # Simulate the published message being lost in Redis a while ago.
     with SessionLocal() as db:
         db.execute(update(Delivery).where(Delivery.id == dlv)
                    .values(enqueued_at=datetime.now(UTC) - timedelta(minutes=5)))
         db.commit()
-    assert sweep(sent.append)["queued"] == 1 and sent == [dlv]
-    assert sweep(sent.append)["queued"] == 0
+    assert sweep()["requeued"] == 1
+    assert sweep()["requeued"] == 0  # a fresh message is already waiting in the outbox
+    assert outbox.publish_due() == 1 and queued == [dlv, dlv]
 
 
 @respx.mock
@@ -195,9 +196,8 @@ def test_sweep_recovers_crashed_worker(setup):
                    .values(locked_until=datetime.now(UTC) - timedelta(seconds=1)))
         db.commit()
 
-    sent: list[str] = []
-    result = sweep(sent.append)
-    assert result == {"reclaimed": 1, "queued": 1} and sent == [dlv]
+    assert sweep() == {"reclaimed": 1, "requeued": 0, "cleaned": 0}
+    assert outbox.publish_due() == 1  # the retry was staged in the outbox in the same transaction
     d = _delivery(dlv)
     assert d.status == "retrying" and d.attempt_count == 1
     [lost] = _attempts(dlv)
@@ -217,7 +217,7 @@ def test_late_result_after_lease_lost_does_not_overwrite_state(setup):
         db.execute(update(Delivery).where(Delivery.id == dlv)
                    .values(locked_until=datetime.now(UTC) - timedelta(seconds=1)))
         db.commit()
-    sweep(lambda _id: None)  # reclaimed → retrying
+    sweep()  # reclaimed → retrying
     _record(dlv, 1, datetime.now(UTC), 5, Outcome(success=True, retryable=False, status_code=200))
     assert _delivery(dlv).status == "retrying"
     assert len(_attempts(dlv)) == 2  # both the lost-worker record and the late real result are kept

@@ -11,6 +11,7 @@ const NAV = [
   { href: "/deliveries", label: "Deliveries", icon: "⇄" },
   { href: "/endpoints", label: "Endpoints", icon: "◎" },
   { href: "/api-keys", label: "API keys", icon: "⚿" },
+  { href: "/audit-log", label: "Audit log", icon: "☰" },
 ];
 
 export function Sidebar() {

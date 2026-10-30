@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -86,11 +86,15 @@ def _clean_event_types(values: list[str]) -> list[str]:
     return cleaned
 
 
+MaxAttempts = Field(default=None, ge=1, le=10, description="Attempts per delivery, including the first (1-10).")
+
+
 class EndpointIn(BaseModel):
     url: str = Field(max_length=2048)
     description: str | None = Field(default=None, max_length=500)
     event_types: list[str]
     enabled: bool = True
+    max_attempts: int | None = MaxAttempts
 
     @field_validator("event_types")
     @classmethod
@@ -103,6 +107,7 @@ class EndpointPatch(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     event_types: list[str] | None = None
     enabled: bool | None = None
+    max_attempts: int | None = MaxAttempts
 
     @field_validator("event_types")
     @classmethod
@@ -117,8 +122,16 @@ class EndpointOut(BaseModel):
     description: str | None
     enabled: bool
     event_types: list[str]
+    max_attempts: int
+    # When the old secret stops signing after a rotation; null when there's no grace period running.
+    previous_secret_expires_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("previous_secret_expires_at")
+    @classmethod
+    def _only_if_active(cls, v: datetime | None) -> datetime | None:
+        return v if v is not None and v > datetime.now(UTC) else None
 
 
 class EndpointCreated(EndpointOut):
@@ -127,6 +140,15 @@ class EndpointCreated(EndpointOut):
 
 class SigningSecret(BaseModel):
     signing_secret: str
+    # Set during a rotation grace period: the old secret also signs requests until then.
+    previous_secret_expires_at: datetime | None = None
+
+
+class RotateSecretIn(BaseModel):
+    grace_period_seconds: int | None = Field(
+        default=None, ge=0, le=7 * 24 * 3600,
+        description="How long the old secret keeps signing too (0 to 7 days). Defaults to 24 hours.",
+    )
 
 
 # --- Events ------------------------------------------------------------------
@@ -167,6 +189,7 @@ class EventSummary(BaseModel):
 
 class EventOut(EventSummary):
     data: dict[str, Any]
+    idempotency_key: str | None = None
 
 
 # --- Deliveries --------------------------------------------------------------
@@ -184,6 +207,10 @@ class DeliveryOut(BaseModel):
     last_status_code: int | None
     last_error: str | None
     delivered_at: datetime | None
+    replay_count: int
+    last_replayed_at: datetime | None
+    # True when POST /v1/deliveries/{id}/replay would be accepted right now.
+    replayable: bool
     created_at: datetime
     updated_at: datetime
 
@@ -199,6 +226,54 @@ class AttemptOut(BaseModel):
     response_body: str | None
     error: str | None
     success: bool
+
+
+class Actor(BaseModel):
+    type: Literal["session", "api_key"]
+    api_key_id: str | None = None
+
+
+class ReplayOut(BaseModel):
+    id: str
+    delivery_id: str
+    previous_status: str
+    first_attempt_number: int
+    requested_by: Actor
+    created_at: datetime
+
+
+class DeliveryReplayed(BaseModel):
+    replay: ReplayOut
+    delivery: "DeliveryOut"
+
+
+class ReplaySkipped(BaseModel):
+    delivery_id: str
+    reason: str
+
+
+class EventReplayIn(BaseModel):
+    endpoint_ids: list[str] | None = Field(
+        default=None, max_length=100, description="Only replay deliveries to these endpoints. Default: all."
+    )
+
+
+class EventReplayed(BaseModel):
+    replayed: list[DeliveryReplayed]
+    skipped: list[ReplaySkipped]
+
+
+# --- Audit log ---------------------------------------------------------------
+
+class AuditLogOut(BaseModel):
+    id: str
+    action: str
+    actor: Actor
+    resource_type: str | None
+    resource_id: str | None
+    details: dict[str, Any] | None
+    ip_address: str | None
+    created_at: datetime
 
 
 # --- Stats -------------------------------------------------------------------

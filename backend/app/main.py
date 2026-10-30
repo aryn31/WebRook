@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.errors import install_error_handlers
 from app.logconfig import configure_logging
-from app.routers import api_keys, auth, deliveries, endpoints, events, health, stats
+from app.routers import api_keys, audit_logs, auth, deliveries, endpoints, events, health, stats
 
 configure_logging()
 
@@ -30,5 +30,5 @@ async def limit_body_size(request: Request, call_next):
     return await call_next(request)
 
 
-for r in (health, auth, api_keys, endpoints, events, deliveries, stats):
+for r in (health, auth, api_keys, endpoints, events, deliveries, stats, audit_logs):
     app.include_router(r.router)

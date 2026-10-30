@@ -1,4 +1,4 @@
-import type { Delivery, DeliveryCounts, DeliveryStatus } from "./api";
+import type { Actor, AuditLog, Delivery, DeliveryCounts, DeliveryStatus } from "./api";
 
 // Times: shown in the viewer's local time everywhere; full UTC is in the title attribute.
 
@@ -107,8 +107,8 @@ export function explainDelivery(d: Delivery): Explanation {
         tone: "failed",
         text: `Delivery failed${reason ? `: ${reason}` : ""}. Gave up after ${attempts}.`,
         hint: nonRetryable4xx
-          ? `HTTP ${code} is not retried. Check that your endpoint accepts POST requests at this URL and verifies the signature correctly, then send the event again.`
-          : "Check that your endpoint is reachable and returns a 2xx status within 10 seconds, then send the event again.",
+          ? `HTTP ${code} is not retried. Check that your endpoint accepts POST requests at this URL and verifies the signature correctly, then replay the delivery.`
+          : "Check that your endpoint is reachable and returns a 2xx status within 10 seconds, then replay the delivery.",
       };
     }
     case "retrying":
@@ -124,9 +124,14 @@ export function explainDelivery(d: Delivery): Explanation {
     case "pending":
       return {
         tone: "pending",
-        text: d.next_attempt_at
-          ? `Waiting to be sent — first attempt scheduled for ${formatClock(d.next_attempt_at)}.`
-          : "Waiting to be sent.",
+        text:
+          d.attempt_count > 0
+            ? `Replay queued — attempt ${d.attempt_count + 1} ${
+                d.next_attempt_at ? `scheduled for ${formatClock(d.next_attempt_at)}` : "will be sent shortly"
+              }.`
+            : d.next_attempt_at
+              ? `Waiting to be sent — first attempt scheduled for ${formatClock(d.next_attempt_at)}.`
+              : "Waiting to be sent.",
       };
     case "processing":
       return { tone: "processing", text: `Sending now (attempt ${d.attempt_count + 1} of ${d.max_attempts}).` };
@@ -158,3 +163,89 @@ export function shortId(id: string, n = 14): string {
 
 /** localStorage flag set when the user opens an event detail page (onboarding step 4). */
 export const INSPECTED_KEY = "hf_inspected_event";
+
+/** "1 hour", "24 hours", "7 days", "90 seconds". */
+export function formatSeconds(sec: number): string {
+  const plural = (n: number, u: string) => `${n} ${u}${n === 1 ? "" : "s"}`;
+  if (sec <= 0) return "none";
+  if (sec % 86400 === 0 && sec >= 86400 * 2) return plural(sec / 86400, "day");
+  if (sec % 3600 === 0) return plural(sec / 3600, "hour");
+  if (sec % 60 === 0) return plural(sec / 60, "minute");
+  return plural(sec, "second");
+}
+
+/** Choices offered when rotating a signing secret. */
+export const GRACE_OPTIONS: { seconds: number; label: string }[] = [
+  { seconds: 0, label: "None" },
+  { seconds: 3600, label: "1 hour" },
+  { seconds: 86400, label: "24 hours" },
+  { seconds: 604800, label: "7 days" },
+];
+export const GRACE_DEFAULT = 86400;
+
+export function isFuture(iso: string | null | undefined): boolean {
+  const d = toDate(iso);
+  return d != null && d.getTime() > Date.now();
+}
+
+/** "the dashboard" / "API key key_…". */
+export function actorLabel(a: Actor): string {
+  if (a.type === "api_key") return a.api_key_id ? `API key ${a.api_key_id}` : "an API key";
+  return "the dashboard";
+}
+
+export const AUDIT_LABEL: Record<string, string> = {
+  "auth.registered": "Account created",
+  "auth.login": "Logged in",
+  "api_key.created": "API key created",
+  "api_key.revoked": "API key revoked",
+  "endpoint.created": "Endpoint created",
+  "endpoint.updated": "Endpoint updated",
+  "endpoint.archived": "Endpoint archived",
+  "endpoint.secret_viewed": "Signing secret viewed",
+  "endpoint.secret_rotated": "Signing secret rotated",
+  "delivery.replayed": "Delivery replayed",
+  "event.replayed": "Event replayed",
+};
+
+export function auditLabel(action: string): string {
+  return AUDIT_LABEL[action] ?? action;
+}
+
+function short(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "string") return v.length > 60 ? v.slice(0, 57) + "…" : v;
+  if (Array.isArray(v)) return v.length === 0 ? "[]" : v.map((x) => short(x)).join(", ");
+  const j = JSON.stringify(v);
+  return j.length > 60 ? j.slice(0, 57) + "…" : j;
+}
+
+/** Compact one-line-per-fact summary of an audit entry's details. */
+export function auditSummary(log: AuditLog): string[] {
+  const d = log.details;
+  if (!d) return [];
+  switch (log.action) {
+    case "endpoint.updated": {
+      const changes = d.changes as Record<string, { from?: unknown; to?: unknown }> | undefined;
+      if (changes && typeof changes === "object") {
+        return Object.entries(changes).map(([f, c]) => `${f}: ${short(c?.from)} → ${short(c?.to)}`);
+      }
+      break;
+    }
+    case "endpoint.secret_rotated":
+      if (typeof d.grace_period_seconds === "number") {
+        return [d.grace_period_seconds > 0 ? `Old secret kept for ${formatSeconds(d.grace_period_seconds)}` : "Old secret revoked immediately"];
+      }
+      break;
+    case "delivery.replayed":
+      return [typeof d.previous_status === "string" ? `Was ${d.previous_status}` : null].filter((x): x is string => !!x);
+    case "event.replayed": {
+      const n = Array.isArray(d.deliveries) ? d.deliveries.length : typeof d.deliveries === "number" ? d.deliveries : null;
+      if (n != null) return [`${n} deliver${n === 1 ? "y" : "ies"} replayed`];
+      break;
+    }
+  }
+  return Object.entries(d)
+    .filter(([k]) => !k.endsWith("_id"))
+    .map(([k, v]) => `${k}: ${short(v)}`);
+}
