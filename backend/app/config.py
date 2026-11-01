@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     replay_rate_limit_per_minute: int = 60
     # How long an Idempotency-Key on POST /v1/events is remembered.
     idempotency_key_ttl_hours: int = 24
+    # Default ingestion limits per account. A user row can override either one; 0 means unlimited.
+    event_rate_limit_per_minute: int = 600
+    daily_event_quota: int = 10_000
+
+    # Number of proxies in front of the API that append to X-Forwarded-For (e.g. 1 for Render's load
+    # balancer). 0 ignores the header and uses the connection's address. Used for audit-log IPs.
+    trusted_proxy_count: int = 0
 
     # Delivery
     delivery_timeout_seconds: float = 10.0
@@ -50,6 +57,19 @@ class Settings(BaseSettings):
     outbox_poll_interval_seconds: float = 1.0
     # Default grace period when rotating a signing secret (the old secret keeps signing too).
     secret_rotation_grace_seconds: int = 24 * 3600
+    # Most requests in flight to one endpoint at a time, across all workers. Extra deliveries wait briefly.
+    endpoint_max_concurrency: int = 10
+
+    # Retention. Events older than this (and their deliveries and attempts) are deleted once nothing about
+    # them is still in progress. 0 keeps them forever.
+    event_retention_days: int = 30
+    audit_log_retention_days: int = 365
+
+    # Monitoring. If METRICS_TOKEN is set, GET /metrics requires "Authorization: Bearer <token>".
+    metrics_token: str | None = None
+    # Alert (an ERROR log line) when due work has waited longer than this, or the worker goes quiet.
+    alert_queue_delay_seconds: int = 300
+    alert_worker_silence_seconds: int = 120
 
     # Block deliveries to loopback/private/link-local addresses (SSRF protection).
     # Turn off only for local development, where test receivers run on private networks.

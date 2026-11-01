@@ -196,7 +196,7 @@ def test_sweep_recovers_crashed_worker(setup):
                    .values(locked_until=datetime.now(UTC) - timedelta(seconds=1)))
         db.commit()
 
-    assert sweep() == {"reclaimed": 1, "requeued": 0, "cleaned": 0}
+    assert sweep() == {"reclaimed": 1, "requeued": 0, "cleaned": 0, "expired": 0}
     assert outbox.publish_due() == 1  # the retry was staged in the outbox in the same transaction
     d = _delivery(dlv)
     assert d.status == "retrying" and d.attempt_count == 1

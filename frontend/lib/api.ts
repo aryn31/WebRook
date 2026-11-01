@@ -87,8 +87,12 @@ export type Delivery = {
   endpoint_id: string;
   endpoint_url: string;
   status: DeliveryStatus;
+  /** Totals over the delivery's life; they keep growing with each manual replay. */
   attempt_count: number;
   max_attempts: number;
+  /** Counted from the last manual replay (or creation). Use these for "x of y" displays. */
+  run_attempt_count: number;
+  run_max_attempts: number;
   next_attempt_at: string | null;
   last_status_code: number | null;
   last_error: string | null;

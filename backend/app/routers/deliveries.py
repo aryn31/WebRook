@@ -24,6 +24,8 @@ def delivery_out(d: Delivery) -> DeliveryOut:
         status=d.status,
         attempt_count=d.attempt_count,
         max_attempts=d.max_attempts,
+        run_attempt_count=d.attempt_count - d.retry_base_attempt,
+        run_max_attempts=d.max_attempts - d.retry_base_attempt,
         next_attempt_at=d.next_attempt_at,
         last_status_code=d.last_status_code,
         last_error=d.last_error,

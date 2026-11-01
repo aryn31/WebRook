@@ -1,8 +1,23 @@
 # HookFlow Product Requirements Document (PRD)
 
-**Version:** 1.1 · **Status:** In development (Milestones 1 and 2 complete; Milestone 3 next) · **Last updated:** 2026-10-30  
+**Version:** 1.2 · **Status:** Public beta ready (Milestones 1–3 complete; Milestone 4 next) · **Last updated:** 2026-11-01  
 **Product type:** Developer Infrastructure / Backend SaaS  
 **Primary objective:** Build a reliable, secure, and usable webhook delivery platform.
+
+### What changed in v1.2
+
+Milestone 3 is complete. Changes are marked **Status (v1.2)** or **Decision (v1.2)** in the text.
+
+- SSRF: connections are pinned to the checked address, which blocks DNS rebinding (13.1).
+- Rate limiting and quotas: per-account ingestion limits with response headers, and per-endpoint concurrency limits
+  (FR-11, 13.4).
+- Monitoring: Prometheus metrics and logged operator alerts (FR-13).
+- Retention decided: events 30 days, audit log 1 year (section 18).
+- Deployment decided: Render for the backend, Vercel for the dashboard, GitHub Actions for CI (section 18).
+- Database-outage, DNS-failure and load tests (section 14).
+- Both known issues fixed.
+
+Operating details (settings, metrics, alerts, capacity) are in [`docs/operations.md`](operations.md).
 
 ### What changed in v1.1
 
@@ -644,7 +659,7 @@ The dashboard must provide the core workflows needed to use the product.
 
 ### FR-11: Rate Limiting and Quotas
 
-**Priority:** P1. **Status (v1.1):** Partly done. Authentication and replay are limited; the rest is Milestone 3.
+**Priority:** P1. **Status (v1.2):** Done.
 
 **Requirements:**
 
@@ -654,6 +669,17 @@ The dashboard must provide the core workflows needed to use the product.
 - Limit outbound delivery concurrency.
 - Return HTTP 429 when applicable.
 - Expose appropriate rate-limit information.
+
+> **Status (v1.2):**
+>
+> - **Ingestion:** 600 events per minute and 10,000 new events per UTC day per account by default. Either can be
+>   changed per account; `0` means unlimited.
+> - **Responses:** `X-RateLimit-*` and `X-Quota-*` headers on every ingestion response. `429 rate_limited` or
+>   `429 quota_exceeded`, with `Retry-After`. Idempotent retries don't use quota.
+> - **Auth and replay:** login and registration are limited per IP and per email; replays per account.
+> - **Outbound:** at most 10 requests in flight per endpoint across all workers. Extra deliveries wait without using
+>   an attempt.
+> - **Redis down:** limits fail open, so a Redis outage doesn't block ingestion.
 
 ### FR-12: Notifications
 
@@ -668,8 +694,7 @@ The dashboard must provide the core workflows needed to use the product.
 
 ### FR-13: Operational Monitoring
 
-**Priority:** P1. **Status (v1.1):** Partly done. Structured JSON logs and health checks exist; metrics and alerts are
-Milestone 3.
+**Priority:** P1. **Status (v1.2):** Done.
 
 **Requirements:**
 
@@ -680,6 +705,15 @@ Milestone 3.
 - Emit structured logs.
 - Provide health-check endpoints.
 - Alert operators to persistent processing failures.
+
+> **Status (v1.2):**
+>
+> - **Metrics:** `GET /metrics` serves Prometheus metrics: API request counts and latency, queue depth, the oldest
+>   waiting delivery, outbox backlog, recent attempt success and latency, and worker heartbeat. It can be protected
+>   with a token.
+> - **Alerts:** a monitor task logs an `ALERT` line when due work or queue messages wait over 5 minutes. Suggested
+>   Prometheus rules cover worker-down and failure-rate alerts.
+> - **Health:** `/health/ready` also reports whether the worker is running.
 
 ### FR-14: Audit Log (added in v1.1)
 
@@ -1005,10 +1039,11 @@ destinations. The following controls are mandatory before enabling unrestricted 
 - Reject loopback, private, link-local, reserved, and otherwise prohibited IP ranges. *(Done: at registration for
   literal IPs, and at send time after DNS resolution)*
 - Validate DNS resolution and the destination IP. *(Done)*
-- Defend against DNS rebinding and redirect-based bypasses. *(Redirects: done. Rebinding, which means pinning the
-  checked IP for the connection: Milestone 3)*
+- Defend against DNS rebinding and redirect-based bypasses. *(Done. Redirects are never followed. The connection
+  uses the exact address that was checked, and one private address rejects the whole host)*
 - Disable redirects by default. *(Done: redirects are never followed)*
-- Enforce network-level egress restrictions. *(Milestone 3)*
+- Enforce network-level egress restrictions. *(Documented in `docs/operations.md`. This is a deployment control;
+  managed hosts like Render don't offer it)*
 - Apply strict timeouts and response-size limits. *(Done)*
 
 ### 13.2 Credential Protection
@@ -1028,10 +1063,11 @@ tenant's records.
 
 - Limit event payload size. *(1 MiB)*
 - Limit endpoint count per account. *(50)*
-- Limit ingestion requests. *(Milestone 3)*
-- Limit concurrent outbound requests. *(Worker concurrency setting; per-endpoint limits in Milestone 3)*
+- Limit ingestion requests. *(Done: per-account rate limit and daily quota)*
+- Limit concurrent outbound requests. *(Done: worker concurrency, plus 10 per endpoint)*
 - Enforce queue and retry quotas. *(Attempts are capped at 10 per run, and replays are rate limited)*
-- Apply retention and cleanup policies. *(Outbox and idempotency cleanup done; events and attempts in Milestone 3)*
+- Apply retention and cleanup policies. *(Done: events and their history after 30 days, audit entries after 1 year,
+  outbox messages after 1 day, idempotency keys after 24 hours)*
 
 ## 14. Testing Strategy
 
@@ -1094,7 +1130,11 @@ Record the test environment and workload alongside every performance result.
 > - **Covered:** unit, integration, failure, and most security cases. That includes concurrent idempotency, Redis
 >   down during ingestion, worker crash and lease recovery, late results after a lost lease, redirects, timeouts and
 >   tenant isolation on every route.
-> - **Still to do (Milestone 3):** database-unavailability tests, DNS-failure tests, and load testing.
+> - **Status (v1.2):** 118 automated tests pass. Added SSRF pinning and DNS-rebinding tests, DNS failures (retried),
+>   database outages (API returns 503, the worker recovers, metrics keep serving), limits and quotas, concurrency,
+>   retention, metrics and alerts.
+> - **Load testing (v1.2):** see `docs/operations.md` for the setup and results. Ingestion p95 stays below 200 ms
+>   up to about 10 concurrent clients (about 160 events/s) on a single local API process. It reached 83 ms there.
 
 ## 15. Success Metrics
 
@@ -1163,21 +1203,21 @@ Also delivered (v1.1): an audit log (FR-14), a secret-rotation grace period, and
 **Exit criteria:** Transient failures can be retried, duplicate ingestion is handled correctly, and unfinished work
 can be recovered after a worker restart. *(Met. Recovery from a Redis outage is also verified.)*
 
-### Milestone 3: Public Beta Hardening (Week 4–5). **Status (v1.1): Next**
+### Milestone 3: Public Beta Hardening (Week 4–5). **Status (v1.2): Complete**
 
 **Deliver:**
 
-- SSRF protections. *(Basic checks done; DNS-rebinding pinning and egress rules remain)*
-- Rate limiting. *(Auth and replay done; ingestion and per-account quotas remain)*
-- Metrics and structured logging. *(Structured logging done; Prometheus metrics remain)*
-- Integration tests. *(Largely done)*
-- Load testing.
-- API documentation. *(Done: `docs/api.md` and interactive OpenAPI docs)*
-- Production deployment.
-- Error handling and retention policies. *(Error handling done; event and attempt retention remains)*
+- SSRF protections. *(Done: DNS-rebinding pinning; egress rules documented for self-managed networks)*
+- Rate limiting. *(Done: auth, replay, ingestion, per-account quotas, per-endpoint concurrency)*
+- Metrics and structured logging. *(Done: Prometheus metrics, JSON logs, logged alerts)*
+- Integration tests. *(Done: 118 tests)*
+- Load testing. *(Done: `loadtest/ingest.py`; results in `docs/operations.md`)*
+- API documentation. *(Done: `docs/api.md`, `docs/operations.md` and interactive OpenAPI docs)*
+- Production deployment. *(Done: Render and Vercel, with GitHub Actions CI)*
+- Error handling and retention policies. *(Done: database outages return 503; 30-day event retention)*
 
 **Exit criteria:** Critical security and recovery tests pass, operational metrics are available, and the system can
-be used safely within documented limits.
+be used safely within documented limits. *(Met.)*
 
 ### Milestone 4: Product Improvements (Week 6 and beyond)
 
@@ -1198,13 +1238,21 @@ These are secondary to the reliability of the core delivery pipeline.
 
 ### Known issues
 
-These were found during Milestones 1 and 2 and are scheduled for Milestone 3:
+Found during Milestones 1 and 2. **Status (v1.2):** both fixed.
 
-- **Wrong audit IP for dashboard actions.** The audit log records the dashboard proxy's IP, not the user's. Fixing it
-  means trusting `X-Forwarded-For` only from the known proxy, which depends on the deployment network.
-- **Confusing attempt totals after replays.** A delivery's `max_attempts` is a running total that grows with each
-  replay, so after many replays the dashboard can show values like "63/65". The behaviour is correct, but the display
-  should count attempts from the last replay.
+- **Wrong audit IP for dashboard actions.** *Fixed:* `TRUSTED_PROXY_COUNT` tells HookFlow how many proxies to trust
+  in `X-Forwarded-For`. This also fixes the per-IP login limit, which behind a proxy was shared by every user. The
+  right value depends on the hosting setup, so check it after each deploy (see `docs/operations.md`).
+- **Confusing attempt totals after replays.** *Fixed:* deliveries also report `run_attempt_count` and
+  `run_max_attempts`, counted from the last replay. The dashboard shows those and keeps the lifetime total in a
+  tooltip.
+
+Remaining limitations:
+
+- Request metrics are per API process; pipeline metrics are global.
+- The monitor runs on the worker, so a stopped worker is detected by `/health/ready` or Prometheus, not by the monitor
+  itself.
+- Limits fail open when Redis is down.
 
 ## 17. Risks and Mitigations
 
@@ -1243,11 +1291,11 @@ Open questions and their status:
 | Question | Status (v1.1) |
 | --- | --- |
 | Should event subscriptions use exact event-type matching only, or support wildcard patterns? | **Decided:** exact matches plus `*` for all events. Pattern wildcards (`order.*`) are deferred to Milestone 4. |
-| How long should events and delivery attempts be retained? | **Open.** To decide in Milestone 3. Outbox rows (1 day) and idempotency keys (24 hours) are already cleaned up. |
+| How long should events and delivery attempts be retained? | **Decided (v1.2):** 30 days for events with their deliveries and attempts (events with work still in progress are kept until it finishes), and 1 year for the audit log. Both are configurable. |
 | Should endpoint deletion disable new deliveries immediately while preserving existing history? | **Decided: yes.** Deletion archives the endpoint, stops new deliveries, cancels unsent ones, and keeps history. |
 | Should users be able to customize retry policies in the MVP? | **Decided: partly.** Per-endpoint maximum attempts (1–10). Backoff timing is set system-wide; custom schedules are deferred to Milestone 4. |
-| Which deployment provider and object-storage options will be used? | **Open.** To decide in Milestone 3. |
-| Will the initial service be public, private, or limited to invited beta users? | **Open.** Recommendation: invited beta until the Milestone 3 SSRF and rate-limit work is done. |
+| Which deployment provider and object-storage options will be used? | **Decided (v1.2):** Render for the API, worker, Postgres and Redis, and Vercel for the dashboard, with GitHub Actions for CI. No object storage is needed yet: payloads and response bodies are capped and stored in Postgres. |
+| Will the initial service be public, private, or limited to invited beta users? | **Recommendation (v1.2):** the SSRF and rate-limit work is done, so a public beta is possible. Keep the default limits, and set `METRICS_TOKEN` and `TRUSTED_PROXY_COUNT` first. |
 
 ## 19. Definition of Done
 

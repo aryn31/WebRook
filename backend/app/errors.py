@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 log = logging.getLogger("hookflow.api")
@@ -65,6 +66,16 @@ def install_error_handlers(app: FastAPI) -> None:
             for e in exc.errors()
         ]
         return JSONResponse(_body("validation_error", "Request validation failed.", details), 422)
+
+    @app.exception_handler(OperationalError)
+    async def _database_down(request: Request, exc: OperationalError) -> JSONResponse:
+        # Connection lost or database unreachable: temporary, so tell clients to retry rather than give up.
+        log.error("Database unavailable on %s %s", request.method, request.url.path, exc_info=exc)
+        return JSONResponse(
+            _body("service_unavailable", "The service is temporarily unavailable. Please retry shortly."),
+            503,
+            headers={"Retry-After": "5"},
+        )
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:

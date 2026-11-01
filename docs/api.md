@@ -25,8 +25,9 @@ Every error has the same shape:
 
 Common codes: `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` / `email_taken` (409),
 `idempotency_key_reused` (409), `not_replayable` / `nothing_to_replay` (409),
-`validation_error` (422, `details` holds field errors), `payload_too_large` (413), `rate_limited` (429, with a
-`Retry-After` header).
+`validation_error` (422, `details` holds field errors), `payload_too_large` (413), `rate_limited` and
+`quota_exceeded` (429, with a `Retry-After` header), `service_unavailable` (503, a temporary database outage: retry
+after the `Retry-After` seconds).
 
 ## Pagination
 
@@ -115,6 +116,21 @@ Body: `{ "event_type": "order.created", "data": { ...any JSON object... } }`
 - `event_type`: 1–100 chars, letters/digits/`_`/`-` in dot-separated parts (`order.created`).
 - Body limit 1 MiB → `413 payload_too_large`.
 
+**Limits.** Each account can send 600 events per minute and 10,000 new events per UTC day by default. Every response
+reports where you stand:
+
+| Header | Meaning |
+| --- | --- |
+| `X-RateLimit-Limit`, `X-RateLimit-Remaining` | Requests allowed per minute, and left in this minute |
+| `X-RateLimit-Reset` | Seconds until the minute resets |
+| `X-Quota-Limit`, `X-Quota-Remaining` | New events allowed per day, and left today |
+| `X-Quota-Reset` | Seconds until midnight UTC |
+
+Over the per-minute limit → `429 rate_limited`; over the daily quota → `429 quota_exceeded`. Both carry
+`Retry-After`. Every request counts toward the per-minute limit. Only requests that create an event use quota, so an
+idempotent retry (below) doesn't. Operators can change the defaults (`EVENT_RATE_LIMIT_PER_MINUTE`,
+`DAILY_EVENT_QUOTA`) or set either per account in the `users` table; `0` means unlimited.
+
 `202` →
 ```json
 { "event_id": "evt_01J...", "status": "accepted", "created_at": "...", "delivery_count": 2 }
@@ -165,7 +181,8 @@ type Delivery = {
   id: string; event_id: string; event_type: string;
   endpoint_id: string; endpoint_url: string;
   status: DeliveryStatus;
-  attempt_count: number; max_attempts: number;
+  attempt_count: number; max_attempts: number;   // totals; both grow with each manual replay
+  run_attempt_count: number; run_max_attempts: number;  // counted from the last replay (or creation)
   next_attempt_at: string | null;        // set while pending/retrying
   last_status_code: number | null;
   last_error: string | null;             // human readable, e.g. "Destination returned HTTP 503"
@@ -253,7 +270,10 @@ type AuditLog = {
 ## Health (no auth)
 
 - `GET /health/live` → `200 { "status": "ok" }`
-- `GET /health/ready` → `200` when Postgres and Redis are reachable, else `503`.
+- `GET /health/ready` → `200` when Postgres and Redis are reachable, else `503`. The body also has `"worker"`:
+  `ok`, `stale` (no scheduled task has run for 2 minutes) or `unknown`. A stale worker doesn't fail the check.
+- `GET /metrics` → Prometheus metrics (see [operations.md](operations.md)). Needs `Authorization: Bearer
+  <METRICS_TOKEN>` when that setting is set.
 
 ---
 
@@ -269,6 +289,13 @@ type AuditLog = {
   exponentially with random jitter: about 30s, 2m, 8m, 32m, 2h (capped at 6h). A `Retry-After` header is honoured.
   Other 4xx responses fail at once with no retry. Failed deliveries can be [replayed](#replay).
 - Retry times are stored in Postgres, so they survive restarts. Nothing is sent before its scheduled time.
+- At most 10 requests are in flight to one endpoint at a time (`ENDPOINT_MAX_CONCURRENCY`). Extra deliveries wait a
+  couple of seconds without using up an attempt.
+- Destinations must be public. HookFlow resolves the host when it connects and refuses private, loopback, link-local
+  and reserved addresses. It connects to the exact address it checked, so a DNS change can't redirect a request
+  inside your network. A failed DNS lookup is retried like a connection error.
+- Events, with their deliveries and attempts, are kept for 30 days (`EVENT_RETENTION_DAYS`) and then deleted. An
+  event with a delivery still in progress is kept until it finishes.
 
 ### Request sent to your endpoint
 

@@ -201,8 +201,12 @@ class DeliveryOut(BaseModel):
     endpoint_id: str
     endpoint_url: str
     status: str
+    # Totals over the delivery's whole life (they keep growing with each manual replay).
     attempt_count: int
     max_attempts: int
+    # The same, counted from the last manual replay (or creation). This is what the dashboard shows.
+    run_attempt_count: int
+    run_max_attempts: int
     next_attempt_at: datetime | None
     last_status_code: int | None
     last_error: str | None

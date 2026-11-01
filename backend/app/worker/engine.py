@@ -15,6 +15,7 @@ delivery is at-least-once. The event ID stays the same so receivers can de-dupli
 
 import json
 import logging
+import random
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,10 +28,11 @@ from sqlalchemy.orm import lazyload
 from app import outbox
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import Delivery, DeliveryAttempt, DeliveryStatus, IdempotencyKey, OutboxMessage
+from app.models import AuditLog, Delivery, DeliveryAttempt, DeliveryStatus, Event, IdempotencyKey, OutboxMessage
 from app.security import decrypt_secret
 from app.signing import sign
-from app.urlguard import UnsafeDestination, check_destination
+from app.worker import concurrency
+from app.urlguard import GuardedTransport, UnresolvableHost, UnsafeDestination
 from app.worker.retry import is_retryable_status, retry_delay_seconds
 
 log = logging.getLogger("hookflow.worker")
@@ -70,14 +72,11 @@ def build_body(event_id: str, event_type: str, created_at: datetime, data: dict)
 
 def send(url: str, body: bytes, headers: dict[str, str]) -> Outcome:
     s = get_settings()
-    try:
-        check_destination(url)
-    except UnsafeDestination as exc:
-        return Outcome(success=False, retryable=False, error=str(exc))
-
     timeout = httpx.Timeout(s.delivery_timeout_seconds, connect=s.delivery_connect_timeout_seconds)
     try:
-        with httpx.Client(timeout=timeout, follow_redirects=False, trust_env=False) as client:
+        # The transport checks every address it connects to (see app/urlguard.py).
+        with httpx.Client(transport=GuardedTransport(), timeout=timeout, follow_redirects=False,
+                          trust_env=False) as client:
             with client.stream("POST", url, content=body, headers=headers) as resp:
                 chunks, size = [], 0
                 for chunk in resp.iter_bytes():
@@ -88,6 +87,10 @@ def send(url: str, body: bytes, headers: dict[str, str]) -> Outcome:
                 text = b"".join(chunks)[: s.response_body_max_bytes].decode("utf-8", errors="replace")
                 code = resp.status_code
                 retry_after = resp.headers.get("retry-after")
+    except UnsafeDestination as exc:
+        return Outcome(False, False, error=str(exc))
+    except UnresolvableHost as exc:
+        return Outcome(False, True, error=str(exc))
     except httpx.TimeoutException:
         return Outcome(False, True, error=f"Destination did not respond within {s.delivery_timeout_seconds:g} seconds.")
     except httpx.ConnectError:
@@ -133,7 +136,41 @@ def _claim(delivery_id: str) -> int | None:
         return row[0] if row else None
 
 
+def _defer(delivery_id: str) -> str:
+    """The endpoint is at its concurrency limit: push this delivery back a couple of seconds.
+
+    Doesn't use up an attempt. Only applies if the delivery is still due (another worker may have taken it).
+    """
+    later = _now() + timedelta(seconds=random.uniform(1.0, 3.0))
+    with SessionLocal() as db:
+        row = db.execute(
+            update(Delivery)
+            .where(Delivery.id == delivery_id, Delivery.status.in_(DUE_STATUSES), Delivery.next_attempt_at <= _now())
+            .values(next_attempt_at=later, enqueued_at=None)
+            .returning(Delivery.id)
+        ).first()
+        if row:
+            outbox.add(db, [delivery_id], available_at=later)
+        db.commit()
+    return "deferred" if row else "skipped"
+
+
 def process_delivery(delivery_id: str) -> str:
+    """Send one due delivery, keeping within the endpoint's concurrency limit."""
+    s = get_settings()
+    with SessionLocal() as db:
+        endpoint_id = db.scalar(select(Delivery.endpoint_id).where(Delivery.id == delivery_id))
+    if endpoint_id is None:
+        return "skipped"
+    if not concurrency.acquire(endpoint_id, delivery_id, s.endpoint_max_concurrency, s.delivery_lease_seconds):
+        return _defer(delivery_id)
+    try:
+        return _process_claimed(delivery_id)
+    finally:
+        concurrency.release(endpoint_id, delivery_id)
+
+
+def _process_claimed(delivery_id: str) -> str:
     attempt_number = _claim(delivery_id)
     if attempt_number is None:
         return "skipped"  # already delivered, claimed by another worker, or not due yet
@@ -319,7 +356,39 @@ def sweep(batch_size: int = 500) -> dict[str, int]:
         ).rowcount
         db.commit()
 
-    result = {"reclaimed": len(stuck), "requeued": len(lost_ids), "cleaned": cleaned}
-    if len(stuck) or lost_ids:
+    expired = delete_expired(now, batch_size)
+    result = {"reclaimed": len(stuck), "requeued": len(lost_ids), "cleaned": cleaned, "expired": expired}
+    if len(stuck) or lost_ids or expired:
         log.info("sweep", extra=result)
     return result
+
+
+ACTIVE_STATUSES = (DeliveryStatus.PENDING, DeliveryStatus.PROCESSING, DeliveryStatus.RETRYING)
+
+
+def delete_expired(now: datetime, batch_size: int = 500) -> int:
+    """Retention: delete old events and audit entries, a batch at a time.
+
+    Deleting an event also deletes its deliveries, attempts, replays and queue messages (foreign keys cascade).
+    Events with a delivery still in progress are kept until it finishes.
+    """
+    s = get_settings()
+    deleted = 0
+    with SessionLocal() as db:
+        if s.event_retention_days > 0:
+            active = exists().where(Delivery.event_id == Event.id, Delivery.status.in_(ACTIVE_STATUSES))
+            old_events = (
+                select(Event.id)
+                .where(Event.created_at < now - timedelta(days=s.event_retention_days), ~active)
+                .limit(batch_size)
+            )
+            deleted += db.execute(delete(Event).where(Event.id.in_(old_events))).rowcount
+        if s.audit_log_retention_days > 0:
+            old_audit = (
+                select(AuditLog.id)
+                .where(AuditLog.created_at < now - timedelta(days=s.audit_log_retention_days))
+                .limit(batch_size)
+            )
+            deleted += db.execute(delete(AuditLog).where(AuditLog.id.in_(old_audit))).rowcount
+        db.commit()
+    return deleted

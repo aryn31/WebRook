@@ -2,6 +2,8 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app import ops
+from app.config import get_settings
 from app.db import engine
 from app.ratelimit import get_redis
 
@@ -28,4 +30,11 @@ def ready() -> JSONResponse:
     except Exception:
         checks["redis"] = "unavailable"
     ok = all(v == "ok" for v in checks.values())
-    return JSONResponse({"status": "ok" if ok else "unavailable", "checks": checks}, status_code=200 if ok else 503)
+    # Reported, but doesn't fail the check: restarting the API wouldn't fix a stopped worker.
+    silence = ops.worker_silence_seconds()
+    if silence is None:
+        worker = "unknown"
+    else:
+        worker = "ok" if silence <= get_settings().alert_worker_silence_seconds else "stale"
+    return JSONResponse({"status": "ok" if ok else "unavailable", "checks": checks, "worker": worker},
+                        status_code=200 if ok else 503)

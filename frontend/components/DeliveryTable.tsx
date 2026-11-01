@@ -256,8 +256,11 @@ export function DeliveryTable({
                       </Link>
                     </td>
                   )}
-                  <td className="mono nowrap">
-                    {d.attempt_count}/{d.max_attempts}
+                  <td
+                    className="mono nowrap"
+                    title={d.replay_count > 0 ? `${d.attempt_count} attempts in total, including earlier runs` : undefined}
+                  >
+                    {d.run_attempt_count}/{d.run_max_attempts}
                     {d.replay_count > 0 && (
                       <span
                         className="replay-badge"

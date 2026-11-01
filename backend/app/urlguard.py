@@ -1,22 +1,31 @@
 """Destination URL checks (SSRF protection).
 
-Milestone 1 scope:
 - At registration: only http/https, a hostname, no embedded credentials, and no literal private IPs.
-- At delivery: resolve the hostname and refuse if any address is private, loopback, link-local or reserved.
+- At delivery: the HTTP client connects through ``GuardedBackend``. It resolves the host itself, refuses if any
+  address is private, loopback, link-local or reserved, and then connects to one of the addresses it just checked.
+  Checking and connecting use the same lookup, so DNS can't change in between (DNS rebinding). TLS still uses the
+  hostname for SNI and certificate checks.
 
-Still to do for the public beta (Milestone 3): pin the connection to the checked IP so DNS can't change between
-the check and the request (DNS rebinding), and add network-level egress rules.
+Network-level egress rules (a firewall in front of the workers) are a deployment concern; see docs/operations.md.
 """
 
 import ipaddress
 import socket
+from collections.abc import Iterable
 from urllib.parse import urlsplit
+
+import httpcore
+import httpx
 
 from app.config import get_settings
 
 
 class UnsafeDestination(Exception):
-    pass
+    """The destination is internal. Retrying won't help."""
+
+
+class UnresolvableHost(Exception):
+    """DNS lookup failed. Often temporary, so deliveries retry."""
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -52,18 +61,77 @@ def validate_url_format(url: str) -> str:
     return url
 
 
+def resolve_public(host: str, port: int) -> list[str]:
+    """Return the host's addresses, or raise if the lookup fails or any address is internal.
+
+    One bad address rejects the host: otherwise a hostile DNS server could mix a public and a private address and
+    hope the connection picks the private one.
+    """
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except (socket.gaierror, UnicodeError) as exc:
+        raise UnresolvableHost(f"Could not resolve host '{host}'.") from exc
+    ips: list[str] = []
+    for info in infos:
+        addr = str(info[4][0]).split("%")[0]
+        if _is_blocked_ip(ipaddress.ip_address(addr)):
+            raise UnsafeDestination("Destination resolves to a private or reserved address, which is not allowed.")
+        if addr not in ips:
+            ips.append(addr)
+    if not ips:
+        raise UnresolvableHost(f"Could not resolve host '{host}'.")
+    return ips
+
+
 def check_destination(url: str) -> None:
-    """Resolve the URL's host and raise UnsafeDestination if it points somewhere internal."""
+    """Raise UnsafeDestination (or UnresolvableHost) if the URL's host points somewhere internal."""
     if not get_settings().block_private_destinations:
         return
     parts = urlsplit(url)
-    host = parts.hostname or ""
-    port = parts.port or (443 if parts.scheme == "https" else 80)
-    try:
-        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as exc:
-        raise UnsafeDestination(f"Could not resolve host '{host}'.") from exc
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0].split("%")[0])
-        if _is_blocked_ip(ip):
-            raise UnsafeDestination("Destination resolves to a private or reserved address, which is not allowed.")
+    resolve_public(parts.hostname or "", parts.port or (443 if parts.scheme == "https" else 80))
+
+
+class GuardedBackend(httpcore.NetworkBackend):
+    """Network backend that only opens TCP connections to addresses that passed ``resolve_public``."""
+
+    def __init__(self) -> None:
+        self._inner = httpcore.SyncBackend()
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable | None = None,
+    ) -> httpcore.NetworkStream:
+        if not get_settings().block_private_destinations:
+            return self._inner.connect_tcp(host, port, timeout, local_address, socket_options)
+        last_error: Exception | None = None
+        for ip in resolve_public(host, port):
+            try:
+                return self._inner.connect_tcp(ip, port, timeout, local_address, socket_options)
+            except httpcore.ConnectError as exc:  # try the next address, like a normal client would
+                last_error = exc
+        assert last_error is not None
+        raise last_error
+
+    def connect_unix_socket(self, *args, **kwargs) -> httpcore.NetworkStream:
+        raise UnsafeDestination("Unix sockets are not allowed.")
+
+    def sleep(self, seconds: float) -> None:
+        self._inner.sleep(seconds)
+
+
+class GuardedTransport(httpx.HTTPTransport):
+    """httpx transport using ``GuardedBackend``. No proxies, no environment settings."""
+
+    def __init__(self) -> None:
+        super().__init__(trust_env=False)
+        # httpx doesn't take a network backend directly, so swap in a pool built with ours.
+        self._pool = httpcore.ConnectionPool(
+            ssl_context=httpx.create_ssl_context(trust_env=False),
+            max_connections=10,
+            max_keepalive_connections=0,
+            network_backend=GuardedBackend(),
+        )

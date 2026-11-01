@@ -91,7 +91,10 @@ export type Explanation = { tone: DeliveryStatus; text: string; hint?: string };
 /** Human-readable, actionable explanation of a delivery's state. */
 export function explainDelivery(d: Delivery): Explanation {
   const reason = failureReason(d);
-  const attempts = `${d.attempt_count} of ${d.max_attempts} attempt${d.max_attempts === 1 ? "" : "s"}`;
+  // Counted from the last replay, so a delivery replayed many times doesn't show e.g. "63 of 65".
+  const used = d.run_attempt_count;
+  const allowed = d.run_max_attempts;
+  const attempts = `${used} of ${allowed} attempt${allowed === 1 ? "" : "s"}`;
   switch (d.status) {
     case "delivered":
       return {
@@ -119,7 +122,7 @@ export function explainDelivery(d: Delivery): Explanation {
             ? ` Next retry scheduled for ${formatClock(d.next_attempt_at)} (${relative(d.next_attempt_at)}).`
             : " A retry is scheduled."
         }`,
-        hint: `${d.max_attempts - d.attempt_count} attempt${d.max_attempts - d.attempt_count === 1 ? "" : "s"} left.`,
+        hint: `${allowed - used} attempt${allowed - used === 1 ? "" : "s"} left.`,
       };
     case "pending":
       return {
@@ -134,7 +137,8 @@ export function explainDelivery(d: Delivery): Explanation {
               : "Waiting to be sent.",
       };
     case "processing":
-      return { tone: "processing", text: `Sending now (attempt ${d.attempt_count + 1} of ${d.max_attempts}).` };
+      // While processing, the claimed attempt is already counted.
+      return { tone: "processing", text: `Sending now (attempt ${used} of ${allowed}).` };
     case "cancelled":
       return {
         tone: "cancelled",

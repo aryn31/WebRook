@@ -3,7 +3,7 @@
 Webhook delivery platform. Send an event to HookFlow once; it delivers it to every subscribed endpoint, signs it,
 retries failures, and records every attempt.
 
-**Status: Milestone 2 (Reliability) done.** See [Milestones](#milestones).
+**Status: Milestone 3 (Public Beta Hardening) done.** See [Milestones](#milestones).
 
 ## Quick start
 
@@ -50,13 +50,19 @@ docker compose run --rm api pytest -q
 
 Tests use a separate `hookflow_test` database and Redis DB 15. They cover auth, API keys, tenant isolation,
 ingestion, idempotency (including concurrent requests), the outbox with Redis down, signing and secret rotation,
-retries, replay, the audit log, the claim/lease logic and crash recovery.
+retries, replay, the audit log, the claim/lease logic and crash recovery, plus SSRF and DNS-rebinding protection,
+DNS and database outages, ingestion limits and quotas, per-endpoint concurrency, retention, metrics and alerts.
+
+Load test: [`loadtest/ingest.py`](loadtest/ingest.py); results and how to run it are in
+[docs/operations.md](docs/operations.md#capacity).
 
 ## Documentation
 
-- [docs/PRD.md](docs/PRD.md): product requirements v1.1, the original PRD plus the decisions made while building
-  ([PDF](docs/HookFlow-PRD-v1.1.pdf); the original v1.0 is `HookFlow.pdf`).
+- [docs/PRD.md](docs/PRD.md): product requirements v1.2, the original PRD plus the decisions made while building
+  ([PDF](docs/HookFlow-PRD-v1.2.pdf); the original v1.0 is `HookFlow.pdf`).
 - [docs/api.md](docs/api.md): API reference, delivery behaviour, and how receivers verify signatures.
+- [docs/operations.md](docs/operations.md): running it in production: every setting, metrics, alerts, retention,
+  security notes and load-test results.
 - [frontend/README.md](frontend/README.md): running the dashboard on its own.
 
 ## How it works
@@ -117,6 +123,12 @@ Backend settings come from environment variables (see `backend/app/config.py`). 
 | `SECRET_ROTATION_GRACE_SECONDS` | `86400` | Default grace period when rotating a signing secret |
 | `DELIVERY_TIMEOUT_SECONDS` | `10` | |
 | `MAX_PAYLOAD_BYTES` | `1048576` | |
+| `EVENT_RATE_LIMIT_PER_MINUTE` / `DAILY_EVENT_QUOTA` | `600` / `10000` | Per account; `0` = unlimited |
+| `EVENT_RETENTION_DAYS` | `30` | Events and their history are deleted after this |
+| `TRUSTED_PROXY_COUNT` | `0` | Proxies in front of the API, for real client IPs |
+| `METRICS_TOKEN` | unset | Protects `GET /metrics` |
+
+The full list is in [docs/operations.md](docs/operations.md#settings).
 
 Run exactly one `beat` process (it schedules the outbox publisher and the sweeper). You can run as many `worker`
 processes as you like.
@@ -137,6 +149,18 @@ background delivery, delivery history, and the dashboard.
 - Worker crash recovery
 - Audit log (API and dashboard)
 
-**Still to do (Milestone 3):** pinning the checked IP to block DNS rebinding, network egress rules, rate limits on
-ingestion and per account (only login, register and replay are limited today), Prometheus metrics, load tests,
-retention cleanup for events and attempts, production deployment.
+**Milestone 3 (Public Beta Hardening):**
+
+- SSRF: connections go to the exact address that was checked, which blocks DNS rebinding
+- Ingestion limits: 600 events per minute and 10,000 per day per account, configurable per account, with
+  rate-limit headers
+- At most 10 requests in flight to one endpoint at a time
+- Prometheus metrics at `/metrics`, and logged alerts when work gets stuck
+- Retention: events and their history are deleted after 30 days, audit entries after a year
+- Database outages return `503` with `Retry-After`; DNS failures are retried
+- Real client IPs behind proxies, for audit entries and login limits
+- Attempt counts in the dashboard restart after a replay
+- Load tests, and a single-container start script that restarts if a process dies
+
+**Next (Milestone 4):** email alerts, team accounts, SDKs, endpoint health, custom retry schedules, pattern
+subscriptions, scoped API keys, bulk replay.

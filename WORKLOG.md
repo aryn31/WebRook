@@ -6,6 +6,80 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-01 — Milestone 3 (Public Beta Hardening)
+
+**Outcome:** All Milestone 3 items in the PRD are done, and both known issues are fixed. The PRD is now v1.2
+(`docs/PRD.md`, `docs/HookFlow-PRD-v1.2.pdf`, which replaces the v1.1 PDF). Nothing is committed yet.
+
+### Built
+- **SSRF / DNS rebinding:**
+  - `app/urlguard.py` has `GuardedBackend` and `GuardedTransport`. The HTTP client resolves the host once, rejects
+    it if any address is internal, and connects to an address from that same lookup.
+  - TLS still checks the hostname.
+  - DNS failures are now retried (they used to fail permanently).
+- **Ingestion limits:**
+  - 600 events per minute and 10,000 per UTC day per account. New nullable `users` columns override them; `0` means
+    unlimited.
+  - `X-RateLimit-*` and `X-Quota-*` headers. `429 rate_limited` / `quota_exceeded` with `Retry-After`.
+  - Idempotent retries and failed requests don't use quota. Limits fail open if Redis is down.
+- **Per-endpoint concurrency:**
+  - `app/worker/concurrency.py` is a Redis sorted-set semaphore, default 10 per endpoint, with slots that expire.
+  - A busy endpoint pushes the delivery back 1–3s without using an attempt.
+- **Metrics:**
+  - `app/metrics.py` serves `GET /metrics` (Prometheus): request count and latency per route template.
+  - `app/ops.py` reads pipeline state from the DB and Redis at scrape time: queue depth, oldest due delivery,
+    outbox backlog, recent success and latency, worker heartbeat.
+  - Optional `METRICS_TOKEN`.
+- **Alerts:**
+  - A `hookflow.monitor` beat task runs every 60s and logs `ALERT ...` at ERROR, de-duplicated for 15 minutes, with
+    a "resolved" line when it clears.
+  - `/health/ready` reports the worker as `ok`/`stale`/`unknown` without failing the check.
+- **Retention:** the sweeper deletes events older than 30 days (cascading to deliveries, attempts, replays and
+  outbox) unless a delivery is still active, and audit entries after 365 days.
+- **Database outages:** `OperationalError` maps to `503 service_unavailable` with `Retry-After: 5`.
+- **Client IPs:**
+  - `app/clientip.py` with `TRUSTED_PROXY_COUNT` takes the Nth `X-Forwarded-For` entry from the right.
+  - Used for audit IPs and the per-IP login limit. Behind a proxy, that limit had been shared by every user.
+- **Attempt display:** deliveries also return `run_attempt_count` / `run_max_attempts`. The dashboard shows those, with
+  the lifetime total in a tooltip, and the "Sending now (attempt x of y)" text is no longer off by one.
+- **`start.sh`:** watches the worker and API, and exits with code 1 if either stops, so Render restarts the
+  container.
+- **Migration `0003`:** the user columns, plus indexes on `events.created_at`, `audit_logs.created_at` and
+  `delivery_attempts.completed_at`.
+- **Load test:** `loadtest/ingest.py`, an async ingester that then waits for the queue to drain.
+- **Docs:**
+  - New `docs/operations.md`: settings, metrics, alerts with Prometheus rules, retention, egress rules,
+    trusted-proxy guidance, capacity.
+  - Updated `docs/api.md`, README and `.env.example`.
+  - PRD: statuses, retention and deployment decisions, known issues marked fixed.
+- New dependency: `prometheus-client==0.21.1`.
+
+### Checked
+- `pytest`: 118 passed (31 new in `tests/test_hardening.py`), including:
+  - a real local HTTP server proving one DNS lookup and a pinned connection
+  - DB down for the API, worker, outbox and metrics
+- Frontend `typecheck` and `build` pass.
+- Live in Docker:
+  - migration to 0003
+  - an event delivered, with the limit headers on the response
+  - `/metrics` populated, with the worker heartbeat
+- `start.sh` in a container: all three processes start; killing the worker makes the container exit with code 1.
+- Load test (Docker Desktop, one API process):
+  - 1 client: p95 8 ms.
+  - 10 clients: 163 events/s, p95 83 ms (meets the PRD's 200 ms target).
+  - 50 clients: about 156 events/s, p95 502 ms.
+  - Four API processes reached only 180/s, so the limit here is the database or disk, not the API.
+  - No errors; the workers kept up.
+
+### Left / notes
+- Push to deploy. Render runs the migration on start.
+- On Render, set `TRUSTED_PROXY_COUNT` (probably `2` with the Vercel dashboard) and `METRICS_TOKEN`. Then check the
+  audit log shows the user's real IP.
+- Request metrics are per API process. The monitor can't report a dead worker (use `/health/ready` or Prometheus).
+- Next: Milestone 4.
+
+---
+
 ## 2026-11-01 — Deployment prep
 
 **Outcome:** The app now accepts the plain `postgres://` and `postgresql://` database URLs that hosts like Render

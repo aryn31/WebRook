@@ -12,12 +12,12 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import audit, outbox
+from app import audit, outbox, ratelimit
 from app.config import get_settings
 from app.deps import DB, CurrentPrincipal
 from app.errors import ApiError, not_found
 from app.ids import new_id
-from app.models import Delivery, DeliveryStatus, Endpoint, EndpointSubscription, Event, IdempotencyKey
+from app.models import Delivery, DeliveryStatus, Endpoint, EndpointSubscription, Event, IdempotencyKey, User
 from app.pagination import Cursor, Limit, paginate
 from app.replay import enforce_rate_limit, replay, replay_out, why_not_replayable
 from app.routers.deliveries import delivery_out
@@ -38,6 +38,62 @@ log = logging.getLogger("hookflow.api")
 router = APIRouter(prefix="/v1/events", tags=["events"])
 
 IDEMPOTENCY_HEADER = "Idempotency-Key"
+
+
+DAY = 86400
+
+
+def _limits(user: User) -> tuple[int, int]:
+    s = get_settings()
+    rate = user.event_rate_limit_per_minute
+    quota = user.daily_event_quota
+    return (s.event_rate_limit_per_minute if rate is None else rate,
+            s.daily_event_quota if quota is None else quota)
+
+
+def _limit_headers(rate: ratelimit.Usage | None, quota: ratelimit.Usage | None) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if rate is not None:
+        headers |= {"X-RateLimit-Limit": str(rate.limit), "X-RateLimit-Remaining": str(rate.remaining),
+                    "X-RateLimit-Reset": str(rate.reset_seconds)}
+    if quota is not None:
+        headers |= {"X-Quota-Limit": str(quota.limit), "X-Quota-Remaining": str(quota.remaining),
+                    "X-Quota-Reset": str(quota.reset_seconds)}
+    return headers
+
+
+def _check_rate(user: User) -> ratelimit.Usage | None:
+    """Requests per minute per account. Every request counts, including rejected and idempotent ones."""
+    limit, _ = _limits(user)
+    if limit <= 0:
+        return None
+    usage = ratelimit.hit(f"events:{user.id}", limit, 60)
+    if usage is not None and usage.exceeded:
+        raise ApiError(
+            429,
+            f"Rate limit of {limit} events per minute exceeded. Try again in {usage.reset_seconds} seconds.",
+            code="rate_limited",
+            headers={"Retry-After": str(usage.reset_seconds), **_limit_headers(usage, None)},
+        )
+    return usage
+
+
+def _take_quota(user: User, rate: ratelimit.Usage | None) -> ratelimit.Usage | None:
+    """New events per UTC day per account. Handed back if the request doesn't create an event."""
+    _, quota = _limits(user)
+    if quota <= 0:
+        return None
+    usage = ratelimit.hit(f"quota:{user.id}", quota, DAY)
+    if usage is not None and usage.exceeded:
+        ratelimit.give_back(f"quota:{user.id}", DAY)
+        usage.used = quota
+        raise ApiError(
+            429,
+            f"Daily quota of {quota} events reached. It resets at midnight UTC, in {usage.reset_seconds} seconds.",
+            code="quota_exceeded",
+            headers={"Retry-After": str(usage.reset_seconds), **_limit_headers(rate, usage)},
+        )
+    return usage
 
 
 @dataclass
@@ -178,6 +234,7 @@ def _ingest(db: Session, user_id: str, body: EventIn, key: str | None) -> Ingest
     },
 )
 async def create_event(request: Request, response: Response, principal: CurrentPrincipal, db: DB) -> dict:
+    rate = await run_in_threadpool(_check_rate, principal.user)
     max_bytes = get_settings().max_payload_bytes
     raw = await request.body()
     if len(raw) > max_bytes:
@@ -191,7 +248,18 @@ async def create_event(request: Request, response: Response, principal: CurrentP
         details = [{"loc": ["body", *e["loc"]], "msg": e["msg"], "type": e["type"]} for e in exc.errors()]
         raise ApiError(422, "Request validation failed.", details=details) from None
 
-    result = await run_in_threadpool(_ingest, db, principal.user.id, body, key)
+    quota = await run_in_threadpool(_take_quota, principal.user, rate)
+    try:
+        result = await run_in_threadpool(_ingest, db, principal.user.id, body, key)
+    except Exception:
+        if quota is not None:
+            await run_in_threadpool(ratelimit.give_back, f"quota:{principal.user.id}", DAY)
+        raise
+    if result.replayed and quota is not None:
+        # An idempotent retry returns the original event, so it doesn't use quota.
+        await run_in_threadpool(ratelimit.give_back, f"quota:{principal.user.id}", DAY)
+        quota.used -= 1
+    response.headers.update(_limit_headers(rate, quota))
     if result.replayed:
         response.headers["Idempotent-Replayed"] = "true"
     else:

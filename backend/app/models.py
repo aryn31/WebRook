@@ -40,6 +40,9 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("usr"))
     email: Mapped[str] = mapped_column(String(320), unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
+    # Per-account overrides of the ingestion limits in settings (NULL = use the default, 0 = unlimited).
+    event_rate_limit_per_minute: Mapped[int | None] = mapped_column(Integer)
+    daily_event_quota: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = _now_col()
 
 
@@ -121,6 +124,7 @@ class Event(Base):
     __table_args__ = (
         Index("ix_events_user_id_id", "user_id", "id"),
         Index("ix_events_user_id_created_at", "user_id", "created_at"),
+        Index("ix_events_created_at", "created_at"),  # retention cleanup
     )
 
 
@@ -182,7 +186,10 @@ class DeliveryAttempt(Base):
     error: Mapped[str | None] = mapped_column(Text)
     success: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    __table_args__ = (Index("ix_delivery_attempts_delivery_id", "delivery_id", "attempt_number"),)
+    __table_args__ = (
+        Index("ix_delivery_attempts_delivery_id", "delivery_id", "attempt_number"),
+        Index("ix_delivery_attempts_completed_at", "completed_at"),  # recent-activity metrics
+    )
 
 
 class IdempotencyKey(Base):
@@ -264,4 +271,5 @@ class AuditLog(Base):
     __table_args__ = (
         Index("ix_audit_logs_user_id_id", "user_id", "id"),
         Index("ix_audit_logs_resource_id", "resource_id"),
+        Index("ix_audit_logs_created_at", "created_at"),  # retention cleanup
     )

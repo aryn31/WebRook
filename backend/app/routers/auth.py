@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app import audit, ratelimit
+from app.clientip import client_ip
 from app.config import get_settings
 from app.deps import DB, Principal, SessionPrincipal
 from app.errors import ApiError
@@ -15,13 +16,9 @@ from app.security import hash_password, new_session_token, sha256_hex, verify_pa
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
 
-def _client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
-
-
 def _limit(request: Request, action: str, email: str) -> None:
     limit = get_settings().auth_rate_limit_per_minute
-    ratelimit.enforce(f"auth:{action}:ip:{_client_ip(request)}", limit)
+    ratelimit.enforce(f"auth:{action}:ip:{client_ip(request)}", limit)
     ratelimit.enforce(f"auth:{action}:email:{sha256_hex(email.lower())}", limit)
 
 
@@ -35,7 +32,7 @@ def _start_session(db: DB, request: Request, response: Response, user: User, act
             expires_at=datetime.now(UTC) + timedelta(hours=s.session_ttl_hours),
         )
     )
-    audit.record(db, Principal(user=user, via="session", ip=_client_ip(request)), action, "user", user.id)
+    audit.record(db, Principal(user=user, via="session", ip=client_ip(request)), action, "user", user.id)
     db.commit()
     response.set_cookie(
         s.session_cookie_name,

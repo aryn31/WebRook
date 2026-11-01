@@ -6,6 +6,7 @@ from fastapi import Depends, Request
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.clientip import client_ip
 from app.config import get_settings
 from app.db import get_db
 from app.errors import ApiError
@@ -50,7 +51,7 @@ def _from_session(db: Session, token: str) -> Principal | None:
 
 def get_principal(request: Request, db: DB) -> Principal:
     principal = _authenticate(request, db)
-    principal.ip = request.client.host if request.client else None
+    principal.ip = client_ip(request)
     return principal
 
 

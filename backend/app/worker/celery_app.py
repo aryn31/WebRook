@@ -24,6 +24,11 @@ celery_app.conf.update(
             "task": "hookflow.sweep",
             "schedule": settings.sweep_interval_seconds,
             "options": {"expires": settings.sweep_interval_seconds},
-        }
+        },
+        "monitor": {
+            "task": "hookflow.monitor",
+            "schedule": 60.0,
+            "options": {"expires": 60.0},
+        },
     },
 )
