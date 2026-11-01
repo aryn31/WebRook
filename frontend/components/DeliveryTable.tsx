@@ -6,6 +6,8 @@ import { api, errorMessage, type Attempt, type Delivery, type Replay } from "@/l
 import { actorLabel, explainDelivery, formatDuration, formatLocal, formatUtc, STATUS_LABEL } from "@/lib/format";
 import { ErrorBox, Loading, StatusPill, Time } from "./ui";
 
+const NEEDS_EXPLAINING = new Set(["failed", "retrying", "cancelled"]);
+
 export function DeliveryExplanation({ delivery, compact }: { delivery: Delivery; compact?: boolean }) {
   const ex = explainDelivery(delivery);
   return (
@@ -290,11 +292,14 @@ export function DeliveryTable({
                     <td className="right actions-cell">{d.replayable && <ReplayButton delivery={d} onReplayed={replayed} />}</td>
                   )}
                 </tr>
-                <tr className={`row-explain${bad ? " row-failed" : ""}`}>
-                  <td colSpan={colCount}>
-                    <DeliveryExplanation delivery={d} compact={!isOpen} />
-                  </td>
-                </tr>
+                {/* The columns already say "delivered, 200"; spell things out only where it helps. */}
+                {(isOpen || NEEDS_EXPLAINING.has(d.status)) && (
+                  <tr className={`row-explain${bad ? " row-failed" : ""}`}>
+                    <td colSpan={colCount}>
+                      <DeliveryExplanation delivery={d} compact={!isOpen} />
+                    </td>
+                  </tr>
+                )}
                 {isOpen && (
                   <tr className="row-detail">
                     <td colSpan={colCount}>

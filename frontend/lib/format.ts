@@ -167,6 +167,7 @@ export function shortId(id: string, n = 14): string {
 
 /** localStorage flag set when the user opens an event detail page (onboarding step 4). */
 export const INSPECTED_KEY = "hf_inspected_event";
+export const ONBOARDING_DISMISSED_KEY = "hf_onboarding_dismissed";
 
 /** "1 hour", "24 hours", "7 days", "90 seconds". */
 export function formatSeconds(sec: number): string {
@@ -176,6 +177,14 @@ export function formatSeconds(sec: number): string {
   if (sec % 3600 === 0) return plural(sec / 3600, "hour");
   if (sec % 60 === 0) return plural(sec / 60, "minute");
   return plural(sec, "second");
+}
+
+/** Rough time left, e.g. "6h 12m", "42m", "35s". */
+export function formatCountdown(sec: number): string {
+  if (sec < 60) return `${Math.max(Math.round(sec), 0)}s`;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
 /** Choices offered when rotating a signing secret. */

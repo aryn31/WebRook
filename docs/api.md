@@ -88,7 +88,19 @@ type Endpoint = {
 }
 ```
 
-### `GET /v1/endpoints` → paginated `Endpoint[]`
+### `GET /v1/endpoints` → paginated `Endpoint[]`, each with `health`
+`health` covers delivery attempts in the last 24 hours (also returned by `GET /v1/endpoints/{id}`):
+
+```ts
+type EndpointHealth = {
+  state: "idle" | "healthy" | "degraded" | "failing"; // idle: no attempts; healthy: 95%+ succeeded;
+                                                      // failing: last attempt failed and under half succeeded
+  attempts: number; successes: number; success_rate: number | null;  // 0-1
+  last_attempt_at: string | null; last_success: boolean | null;
+  last_status_code: number | null; last_error: string | null
+}
+```
+
 ### `POST /v1/endpoints`
 Body: `{ "url": "https://example.com/hooks", "description"?: string, "event_types": ["order.created"], "enabled"?: true, "max_attempts"?: 5 }`
 `201` → `Endpoint & { "signing_secret": "whsec_..." }`
@@ -239,9 +251,26 @@ type Stats = {
   events_total: number;                       // events created in range
   deliveries_total: number;                   // deliveries created in range
   deliveries_by_status: Omit<DeliveryCounts, "total">;
+  latency_ms: { p50: number; p95: number } | null;
   series: { bucket: string; events: number; delivered: number; failed: number }[]  // hourly for 24h, daily otherwise
 }
 ```
+
+`latency_ms` is `{ "p50": number, "p95": number }`: how long endpoints took to respond to attempts in the range, or
+`null` when there were none.
+
+## Usage
+
+### `GET /v1/usage`
+Where the account stands against its [ingestion limits](#post-v1events). Reading it doesn't count toward them.
+
+```json
+{
+  "events_today":         { "limit": 10000, "used": 1240, "remaining": 8760, "resets_in_seconds": 22140 },
+  "requests_this_minute": { "limit": 600,   "used": 3,    "remaining": 597,  "resets_in_seconds": 41 }
+}
+```
+`limit` and `remaining` are `null` when the account is unlimited.
 
 ## Audit log
 

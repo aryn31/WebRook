@@ -2,15 +2,24 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Response
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, literal, select, update
 
 from app import audit
 from app.config import get_settings
 from app.deps import DB, CurrentPrincipal
 from app.errors import ApiError, not_found
-from app.models import Delivery, DeliveryStatus, Endpoint, EndpointSubscription
+from app.models import Delivery, DeliveryAttempt, DeliveryStatus, Endpoint, EndpointSubscription
 from app.pagination import Cursor, Limit, paginate
-from app.schemas import EndpointCreated, EndpointIn, EndpointOut, EndpointPatch, Page, RotateSecretIn, SigningSecret
+from app.schemas import (
+    EndpointCreated,
+    EndpointIn,
+    EndpointOut,
+    EndpointPatch,
+    EndpointWithHealth,
+    Page,
+    RotateSecretIn,
+    SigningSecret,
+)
 from app.security import decrypt_secret, encrypt_secret, new_signing_secret
 from app.urlguard import validate_url_format
 
@@ -48,11 +57,57 @@ def _cancel_unsent(db: DB, endpoint_id: str, reason: str) -> None:
     )
 
 
-@router.get("", response_model=Page[EndpointOut])
+HEALTH_WINDOW = timedelta(hours=24)
+
+
+def _health(db: DB, endpoint_ids: list[str]) -> dict[str, dict]:
+    """Attempt counts and the latest attempt per endpoint over the last 24 hours."""
+    out = {
+        eid: {"state": "idle", "attempts": 0, "successes": 0, "success_rate": None, "last_attempt_at": None,
+              "last_success": None, "last_status_code": None, "last_error": None}
+        for eid in endpoint_ids
+    }
+    if not endpoint_ids:
+        return out
+    since = datetime.now(UTC) - HEALTH_WINDOW
+    recent = (DeliveryAttempt.completed_at >= since, Delivery.endpoint_id.in_(endpoint_ids))
+    for eid, attempts, successes in db.execute(
+        select(Delivery.endpoint_id, func.count(),
+               func.sum(case((DeliveryAttempt.success.is_(True), 1), else_=literal(0))))
+        .join(Delivery, Delivery.id == DeliveryAttempt.delivery_id)
+        .where(*recent)
+        .group_by(Delivery.endpoint_id)
+    ):
+        out[eid] |= {"attempts": attempts, "successes": int(successes or 0)}
+    for eid, at, ok, code, error in db.execute(
+        select(Delivery.endpoint_id, DeliveryAttempt.completed_at, DeliveryAttempt.success,
+               DeliveryAttempt.response_status, DeliveryAttempt.error)
+        .join(Delivery, Delivery.id == DeliveryAttempt.delivery_id)
+        .where(*recent)
+        .order_by(Delivery.endpoint_id, DeliveryAttempt.completed_at.desc())
+        .distinct(Delivery.endpoint_id)
+    ):
+        out[eid] |= {"last_attempt_at": at, "last_success": ok, "last_status_code": code, "last_error": error}
+    for h in out.values():
+        if h["attempts"]:
+            rate = h["successes"] / h["attempts"]
+            h["success_rate"] = rate
+            if rate >= 0.95:
+                h["state"] = "healthy"
+            elif not h["last_success"] and rate < 0.5:
+                h["state"] = "failing"
+            else:
+                h["state"] = "degraded"
+    return out
+
+
+@router.get("", response_model=Page[EndpointWithHealth])
 def list_endpoints(principal: CurrentPrincipal, db: DB, limit: Limit = 25, cursor: Cursor = None) -> dict:
     stmt = select(Endpoint).where(Endpoint.user_id == principal.user.id, Endpoint.archived_at.is_(None))
     data, next_cursor = paginate(db, stmt, Endpoint.id, limit, cursor)
-    return {"data": data, "next_cursor": next_cursor}
+    health = _health(db, [e.id for e in data])
+    rows = [{**EndpointOut.model_validate(e).model_dump(), "health": health[e.id]} for e in data]
+    return {"data": rows, "next_cursor": next_cursor}
 
 
 @router.post("", status_code=201, response_model=EndpointCreated)
@@ -84,9 +139,10 @@ def create_endpoint(body: EndpointIn, principal: CurrentPrincipal, db: DB) -> di
     return {**EndpointOut.model_validate(endpoint).model_dump(), "signing_secret": secret}
 
 
-@router.get("/{endpoint_id}", response_model=EndpointOut)
-def get_endpoint(endpoint_id: str, principal: CurrentPrincipal, db: DB) -> Endpoint:
-    return _get_owned(db, principal, endpoint_id)
+@router.get("/{endpoint_id}", response_model=EndpointWithHealth)
+def get_endpoint(endpoint_id: str, principal: CurrentPrincipal, db: DB) -> dict:
+    endpoint = _get_owned(db, principal, endpoint_id)
+    return {**EndpointOut.model_validate(endpoint).model_dump(), "health": _health(db, [endpoint.id])[endpoint.id]}
 
 
 @router.patch("/{endpoint_id}", response_model=EndpointOut)

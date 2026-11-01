@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, type User } from "@/lib/api";
+import { api, type SystemHealth, type User } from "@/lib/api";
 
 const NAV = [
   { href: "/", label: "Overview", icon: "◧" },
@@ -13,6 +13,53 @@ const NAV = [
   { href: "/api-keys", label: "API keys", icon: "⚿" },
   { href: "/audit-log", label: "Audit log", icon: "☰" },
 ];
+
+const STATUS_POLL_MS = 60_000;
+
+/** One line telling the user whether deliveries are flowing. Hidden until there's something to say. */
+function SystemStatus() {
+  const [health, setHealth] = useState<SystemHealth | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => api.systemHealth().then((h) => alive && setHealth(h));
+    void load();
+    const timer = window.setInterval(load, STATUS_POLL_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  if (!health) return null;
+  let tone: "ok" | "warn" | "bad";
+  let text: string;
+  let detail: string;
+  if (health.status !== "ok") {
+    const down = Object.entries(health.checks)
+      .filter(([, v]) => v !== "ok")
+      .map(([k]) => k);
+    tone = "bad";
+    text = "Service problem";
+    detail = `Unavailable: ${down.join(", ") || "unknown"}. Events sent now may be rejected; retry shortly.`;
+  } else if (health.worker === "stale") {
+    tone = "warn";
+    text = "Deliveries delayed";
+    detail = "The delivery worker hasn't checked in for over 2 minutes. Events are saved and will be sent once it's back.";
+  } else if (health.worker === "ok") {
+    tone = "ok";
+    text = "All systems normal";
+    detail = "API, database, queue and delivery worker are running.";
+  } else {
+    return null; // worker status not known yet (e.g. just started)
+  }
+  return (
+    <div className={`sys-status sys-${tone}`} title={detail} role="status">
+      <span className="sys-dot" aria-hidden />
+      {text}
+    </div>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -51,6 +98,7 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="sidebar-foot">
+        <SystemStatus />
         <div className="user-email" title={user?.email}>
           {user ? user.email : <span className="muted">…</span>}
         </div>

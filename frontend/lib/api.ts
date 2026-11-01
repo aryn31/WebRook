@@ -29,6 +29,23 @@ export type Endpoint = {
   updated_at: string;
 };
 
+/** Delivery attempts to an endpoint over the last 24 hours. */
+export type EndpointHealth = {
+  /** idle: no attempts. healthy: 95%+ succeeded. failing: last attempt failed and under half succeeded. */
+  state: "idle" | "healthy" | "degraded" | "failing";
+  attempts: number;
+  successes: number;
+  /** 0–1, or null with no attempts. */
+  success_rate: number | null;
+  last_attempt_at: string | null;
+  last_success: boolean | null;
+  last_status_code: number | null;
+  last_error: string | null;
+};
+
+/** Returned by the list and get routes. */
+export type EndpointWithHealth = Endpoint & { health: EndpointHealth };
+
 export const MAX_ATTEMPTS_MIN = 1;
 export const MAX_ATTEMPTS_MAX = 10;
 export const MAX_ATTEMPTS_DEFAULT = 5;
@@ -174,6 +191,22 @@ export type Attempt = {
   success: boolean;
 };
 
+export type UsageWindow = {
+  /** null = unlimited */
+  limit: number | null;
+  used: number;
+  remaining: number | null;
+  resets_in_seconds: number;
+};
+
+export type Usage = { events_today: UsageWindow; requests_this_minute: UsageWindow };
+
+export type SystemHealth = {
+  status: "ok" | "unavailable";
+  checks: Record<string, string>;
+  worker?: "ok" | "stale" | "unknown";
+};
+
 export type StatsRange = "24h" | "7d" | "30d";
 
 export type Stats = {
@@ -181,6 +214,8 @@ export type Stats = {
   events_total: number;
   deliveries_total: number;
   deliveries_by_status: Omit<DeliveryCounts, "total">;
+  /** How long endpoints took to respond in this range; null with no attempts. */
+  latency_ms: { p50: number; p95: number } | null;
   series: { bucket: string; events: number; delivered: number; failed: number }[];
 };
 
@@ -372,7 +407,7 @@ export const api = {
 
   // Endpoints
   listEndpoints: (q: { limit?: number; cursor?: string | null } = {}) =>
-    request<Page<Endpoint>>("GET", "/endpoints", { query: q }),
+    request<Page<EndpointWithHealth>>("GET", "/endpoints", { query: q }),
   createEndpoint: (body: {
     url: string;
     description?: string;
@@ -381,7 +416,7 @@ export const api = {
     max_attempts?: number;
   }) =>
     request<EndpointWithSecret>("POST", "/endpoints", { body }),
-  getEndpoint: (id: string) => request<Endpoint>("GET", `/endpoints/${encodeURIComponent(id)}`),
+  getEndpoint: (id: string) => request<EndpointWithHealth>("GET", `/endpoints/${encodeURIComponent(id)}`),
   updateEndpoint: (
     id: string,
     body: Partial<{
@@ -448,6 +483,17 @@ export const api = {
 
   // Stats
   stats: (range: StatsRange) => request<Stats>("GET", "/stats", { query: { range } }),
+  usage: () => request<Usage>("GET", "/usage"),
+
+  /** Service status (no auth). A 503 still has a body describing what's down. */
+  systemHealth: async (): Promise<SystemHealth> => {
+    try {
+      const res = await fetch("/api/health/ready", { cache: "no-store" });
+      return (await res.json()) as SystemHealth;
+    } catch {
+      return { status: "unavailable", checks: { api: "unreachable" } };
+    }
+  },
 };
 
 /** Public URL of the API, used in copy-paste examples (curl). */

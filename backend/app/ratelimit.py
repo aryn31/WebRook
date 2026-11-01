@@ -48,6 +48,16 @@ def hit(bucket: str, limit: int, window_seconds: int = 60, cost: int = 1) -> Usa
     return Usage(limit=limit, used=used, reset_seconds=reset)
 
 
+def peek(bucket: str, window_seconds: int) -> int | None:
+    """Units used so far in the current window, without counting anything. None if Redis is unreachable."""
+    key = f"rl:{bucket}:{int(time.time() // window_seconds)}"
+    try:
+        value = get_redis().get(key)
+    except redis.RedisError:
+        return None
+    return int(value) if value else 0
+
+
 def give_back(bucket: str, window_seconds: int, cost: int = 1) -> None:
     """Undo a hit that turned out not to count (e.g. a request that was rejected later)."""
     key = f"rl:{bucket}:{int(time.time() // window_seconds)}"

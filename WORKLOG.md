@@ -6,6 +6,46 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-01 — Dashboard improvements
+
+**Outcome:** The dashboard is quieter, and it shows the Milestone 3 features: usage against limits, success rate and
+latency, endpoint health, and system status. Nothing is committed yet.
+
+### Changed
+- **Deliveries table:** the explanation line under each row now appears only for failed, retrying and cancelled
+  deliveries (or when the row is open), so successful rows are one line.
+- **Overview:**
+  - Defaults to the 24h range (hourly bars).
+  - The "Get started" checklist hides once an event has been delivered, and has a Dismiss button.
+  - Tiles: Events, Delivered, Retrying, Failed, Pending, Success rate, p95 response. The duplicate "Deliveries"
+    tile was removed.
+  - New **Usage** card: today's events against the daily quota, as a bar that turns amber at 80% and red at 100%,
+    plus this minute's requests and reset countdowns.
+- **Sidebar:** a status line: "All systems normal", "Deliveries delayed" (worker stale) or "Service problem". It
+  polls `/health/ready` every minute, and the tooltip explains what it means.
+- **Endpoints:** a "Health (24h)" column (Healthy / Degraded / Failing / No traffic, with success rate and the
+  latest error) replaces "Max attempts", which is still on the detail page. The endpoint page shows health with a
+  summary.
+- **Backend:**
+  - `GET /v1/usage`: today's count comes from the database, so it's right even for accounts that were unlimited.
+  - `GET /v1/stats` gains `latency_ms` (p50/p95).
+  - Endpoint list and detail include `health`.
+  - `ratelimit.peek`.
+  - Documented in `docs/api.md`.
+- I'd said the sidebar stops partway down long pages. It doesn't: a real scroll shows it stays put, and the cut-off
+  was only in the full-page screenshot.
+
+### Checked
+- `pytest`: 124 passed (6 new in `tests/test_dashboard_data.py`). Frontend typecheck and `next build` pass.
+- Screenshots of the overview, endpoints and deliveries pages, with a healthy and a failing endpoint.
+- Stopped the worker for 2+ minutes: `/health/ready` reported `stale` and the sidebar showed "Deliveries delayed".
+
+### Left
+- Filters (endpoint, event type, time range), search by ID, bulk replay, a light/dark toggle, copy buttons, a payload
+  viewer, and a phone layout for tables.
+
+---
+
 ## 2026-11-01 — Milestone 3 (Public Beta Hardening)
 
 **Outcome:** All Milestone 3 items in the PRD are done, and both known issues are fixed. The PRD is now v1.2

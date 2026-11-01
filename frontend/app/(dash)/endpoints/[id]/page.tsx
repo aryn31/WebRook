@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, ApiError, type Delivery, type Endpoint, type EventAccepted } from "@/lib/api";
+import { api, ApiError, type Delivery, type Endpoint, type EndpointHealth, type EventAccepted } from "@/lib/api";
+import { HealthBadge } from "@/components/EndpointHealth";
 import { EventTypeList, EventTypesInput } from "@/components/EventTypesInput";
 import { DeliveryTable } from "@/components/DeliveryTable";
 import { MaxAttemptsInput, maxAttemptsError } from "@/components/MaxAttemptsInput";
@@ -231,6 +232,7 @@ export default function EndpointDetailPage() {
   const router = useRouter();
 
   const [endpoint, setEndpoint] = useState<Endpoint | null>(null);
+  const [health, setHealth] = useState<EndpointHealth | undefined>(undefined);
   const [loadErr, setLoadErr] = useState<unknown>(null);
   const [editing, setEditing] = useState(false);
   const [toggling, setToggling] = useState(false);
@@ -248,7 +250,9 @@ export default function EndpointDetailPage() {
   const load = useCallback(async () => {
     setLoadErr(null);
     try {
-      setEndpoint(await api.getEndpoint(id));
+      const { health: h, ...e } = await api.getEndpoint(id);
+      setEndpoint(e);
+      setHealth(h);
     } catch (e) {
       setLoadErr(e);
     }
@@ -389,6 +393,10 @@ export default function EndpointDetailPage() {
           />
         ) : (
           <dl className="dl">
+            <dt>Health (24h)</dt>
+            <dd>
+              <HealthBadge health={health} detailed />
+            </dd>
             <dt>URL</dt>
             <dd className="mono break">{endpoint.url}</dd>
             <dt>Description</dt>

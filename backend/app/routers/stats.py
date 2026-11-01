@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from sqlalchemy import case, func, literal, select
 
 from app.deps import DB, CurrentPrincipal
-from app.models import Delivery, DeliveryStatus, Event
+from app.models import Delivery, DeliveryAttempt, DeliveryStatus, Event
 from app.schemas import StatsOut
 
 router = APIRouter(prefix="/v1/stats", tags=["stats"])
@@ -61,8 +61,18 @@ def stats(principal: CurrentPrincipal, db: DB, range: Literal["24h", "7d", "30d"
         row = series.setdefault(b.replace(tzinfo=UTC), {"events": 0, "delivered": 0, "failed": 0})
         row["delivered"], row["failed"] = int(delivered or 0), int(failed or 0)
 
+    p50, p95 = db.execute(
+        select(
+            func.percentile_cont(0.5).within_group(DeliveryAttempt.duration_ms),
+            func.percentile_cont(0.95).within_group(DeliveryAttempt.duration_ms),
+        )
+        .join(Delivery, Delivery.id == DeliveryAttempt.delivery_id)
+        .where(Delivery.user_id == uid, DeliveryAttempt.completed_at >= start, DeliveryAttempt.duration_ms.is_not(None))
+    ).one()
+
     return {
         "range": range,
+        "latency_ms": {"p50": p50, "p95": p95} if p50 is not None else None,
         "events_total": events_total,
         "deliveries_total": sum(by_status.values()),
         "deliveries_by_status": by_status,

@@ -134,6 +134,25 @@ class EndpointOut(BaseModel):
         return v if v is not None and v > datetime.now(UTC) else None
 
 
+class EndpointHealth(BaseModel):
+    """Delivery attempts to this endpoint in the last 24 hours."""
+
+    # idle: no attempts. healthy: 95%+ succeeded. failing: the last attempt failed and under half succeeded.
+    # degraded: anything in between.
+    state: Literal["idle", "healthy", "degraded", "failing"]
+    attempts: int
+    successes: int
+    success_rate: float | None  # 0-1; null when there were no attempts
+    last_attempt_at: datetime | None
+    last_success: bool | None
+    last_status_code: int | None
+    last_error: str | None
+
+
+class EndpointWithHealth(EndpointOut):
+    health: EndpointHealth
+
+
 class EndpointCreated(EndpointOut):
     signing_secret: str
 
@@ -289,9 +308,30 @@ class StatsBucket(BaseModel):
     failed: int
 
 
+class LatencyOut(BaseModel):
+    p50: float
+    p95: float
+
+
 class StatsOut(BaseModel):
     range: Literal["24h", "7d", "30d"]
     events_total: int
     deliveries_total: int
     deliveries_by_status: dict[str, int]
+    # How long endpoints took to respond, over attempts in the range. Null when there were none.
+    latency_ms: LatencyOut | None
     series: list[StatsBucket]
+
+
+class UsageWindow(BaseModel):
+    limit: int | None  # null = unlimited
+    used: int
+    remaining: int | None
+    resets_in_seconds: int
+
+
+class UsageOut(BaseModel):
+    # New events today (UTC). Counts toward the daily quota.
+    events_today: UsageWindow
+    # Ingestion requests this minute. Counts toward the rate limit.
+    requests_this_minute: UsageWindow

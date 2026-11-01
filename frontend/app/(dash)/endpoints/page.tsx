@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, MAX_ATTEMPTS_DEFAULT, type Endpoint, type EndpointWithSecret } from "@/lib/api";
+import { api, MAX_ATTEMPTS_DEFAULT, type EndpointWithHealth, type EndpointWithSecret } from "@/lib/api";
+import { HealthBadge } from "@/components/EndpointHealth";
 import { EventTypeList, EventTypesInput } from "@/components/EventTypesInput";
 import { MaxAttemptsInput, maxAttemptsError } from "@/components/MaxAttemptsInput";
 import { Empty, ErrorBox, Loading, PageHeader, SecretBox, Time } from "@/components/ui";
@@ -94,7 +95,7 @@ function CreateForm({ onCreated, onCancel }: { onCreated: (e: EndpointWithSecret
 
 export default function EndpointsPage() {
   const router = useRouter();
-  const [items, setItems] = useState<Endpoint[] | null>(null);
+  const [items, setItems] = useState<EndpointWithHealth[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState<unknown>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -163,7 +164,12 @@ export default function EndpointsPage() {
             onCreated={(e) => {
               setCreated(e);
               setShowForm(false);
-              setItems((prev) => [e, ...(prev ?? [])]);
+              const { signing_secret: _secret, ...endpoint } = e;
+              const idle = {
+                state: "idle", attempts: 0, successes: 0, success_rate: null, last_attempt_at: null,
+                last_success: null, last_status_code: null, last_error: null,
+              } as const;
+              setItems((prev) => [{ ...endpoint, health: idle }, ...(prev ?? [])]);
             }}
           />
         </section>
@@ -189,7 +195,7 @@ export default function EndpointsPage() {
                 <tr>
                   <th>URL</th>
                   <th>Event types</th>
-                  <th>Max attempts</th>
+                  <th>Health (24h)</th>
                   <th>Status</th>
                   <th>Created</th>
                 </tr>
@@ -206,7 +212,9 @@ export default function EndpointsPage() {
                     <td>
                       <EventTypeList types={e.event_types} />
                     </td>
-                    <td className="mono">{e.max_attempts}</td>
+                    <td className="health-cell">
+                      <HealthBadge health={e.health} />
+                    </td>
                     <td>
                       {e.enabled ? <span className="badge badge-green">Enabled</span> : <span className="badge badge-grey">Disabled</span>}
                     </td>
