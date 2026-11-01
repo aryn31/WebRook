@@ -6,6 +6,22 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-01 — Deployment prep
+
+**Outcome:** The app now accepts the plain `postgres://` and `postgresql://` database URLs that hosts like Render
+provide. The user is setting up deployment (Render + Vercel) and CI/CD (GitHub Actions) themselves.
+
+### Changed
+- `backend/app/config.py`: `DATABASE_URL` values starting `postgres://` or `postgresql://` are rewritten to
+  `postgresql+psycopg://`, so SQLAlchemy uses the installed psycopg 3 driver.
+- `backend/tests/test_units.py`: a test for that conversion.
+- A `render.yaml` and a CI workflow were drafted and then removed at the user's request.
+
+### Checked
+- `pytest`: 87 passed.
+
+---
+
 ## 2026-10-30 — PRD updated to v1.1
 
 **Outcome:** The PRD now matches what was built. The original `HookFlow.pdf` (v1.0) is unchanged. The updated

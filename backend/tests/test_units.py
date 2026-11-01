@@ -90,3 +90,11 @@ def test_dns_resolving_to_public_ip_allowed(monkeypatch):
     monkeypatch.setattr(get_settings(), "block_private_destinations", True)
     monkeypatch.setattr("socket.getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 443))])
     check_destination("https://example.com/hook")
+
+
+def test_plain_postgres_urls_get_the_psycopg_driver():
+    from app.config import Settings
+
+    for given in ("postgres://u:p@h:5432/db", "postgresql://u:p@h:5432/db", "postgresql+psycopg://u:p@h:5432/db"):
+        s = Settings(database_url=given, secret_encryption_key="x")
+        assert s.database_url == "postgresql+psycopg://u:p@h:5432/db"
