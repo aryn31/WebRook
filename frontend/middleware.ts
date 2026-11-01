@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/register"];
+// "/" and "/platform" are public marketing pages.
+const PUBLIC_PATHS = ["/", "/platform", "/login", "/register"];
 
 // Cheap gate only: the real auth check is the API answering 401 (lib/api.ts
 // then redirects to /login). Here we just avoid rendering the dashboard shell
@@ -11,11 +12,11 @@ export function middleware(req: NextRequest) {
   if (req.cookies.has("hf_session")) return NextResponse.next();
   const url = req.nextUrl.clone();
   url.pathname = "/login";
-  url.search = pathname === "/" ? "" : `?next=${encodeURIComponent(pathname + search)}`;
+  url.search = `?next=${encodeURIComponent(pathname + search)}`;
   return NextResponse.redirect(url);
 }
 
 export const config = {
-  // Skip the API proxy, Next internals and static files.
-  matcher: ["/((?!api/|_next/|favicon\\.ico|icon\\.svg|robots\\.txt).*)"],
+  // Skip the API proxy, Next internals and static files (anything with a file extension, e.g. /landing/*.jpg).
+  matcher: ["/((?!api/|_next/|.*\\.[a-zA-Z0-9]+$).*)"],
 };

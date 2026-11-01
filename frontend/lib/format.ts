@@ -81,7 +81,8 @@ function stripPeriod(s: string): string {
 
 /** What went wrong, as a lower-case clause: "destination returned HTTP 503". */
 function failureReason(d: Delivery): string | null {
-  if (d.last_error) return lcFirst(stripPeriod(d.last_error));
+  // The server appends "Gave up after N attempts." to the error; the explanation says that itself.
+  if (d.last_error) return lcFirst(stripPeriod(d.last_error.replace(/\s*Gave up after \d+ attempts?\.?\s*$/, "")));
   if (d.last_status_code != null) return `destination returned HTTP ${d.last_status_code}`;
   return null;
 }

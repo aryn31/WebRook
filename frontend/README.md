@@ -53,7 +53,8 @@ docker-compose example:
 
 - `lib/api.ts` – typed API client (types from `docs/api.md`), `ApiError`, redirect to `/login` on 401
 - `lib/format.ts` – time formatting (local time, UTC on hover) and human-readable delivery explanations
-- `middleware.ts` – redirects to `/login` when there is no `hf_session` cookie (the API's 401 is the real check)
+- `middleware.ts` – redirects to `/login` when there is no `hf_session` cookie (the API's 401 is the real check). `/`, `/platform`, `/login` and `/register` are public
+- `app/page.tsx` – public landing page (server component; shows "Open dashboard" when a session cookie exists)
 - `app/(auth)` – login / register
 - `app/(dash)` – overview, events, deliveries, endpoints, API keys, audit log
 - `components/DeliveryTable.tsx` – delivery rows with a Replay action (when `replayable`) and attempt history with "Replayed" markers
@@ -62,9 +63,11 @@ docker-compose example:
 
 | Route | What it shows |
 | --- | --- |
-| `/` | Overview: onboarding checklist, stats chart, recent failed deliveries |
+| `/` | Public landing page: photo hero, three key points, code sample, Log in / Get started |
+| `/platform` | Public "Platform" page: how delivery works, the delivery lifecycle, reliability, security, visibility and limits |
+| `/overview` | Overview: onboarding checklist, stat tiles, usage against limits, activity chart, recent failed deliveries. Login lands here |
 | `/events`, `/events/[id]` | Events; event detail with payload, idempotency key, deliveries, per-delivery Replay and "Replay failed deliveries" |
 | `/deliveries` | All deliveries with status tabs (e.g. `?status=failed`) and per-row Replay |
-| `/endpoints`, `/endpoints/[id]` | Endpoints with max attempts (1–10); detail page with edit, secret reveal (audited, only on click), rotation with a grace period, test event, deliveries |
+| `/endpoints`, `/endpoints/[id]` | Endpoints with 24h health; detail page with edit, secret reveal (audited, only on click), rotation with a grace period, test event, deliveries |
 | `/api-keys` | Create / revoke API keys |
 | `/audit-log` | Account audit trail, filter by `?action=` and `?resource_id=`, cursor pagination |

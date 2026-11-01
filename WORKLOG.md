@@ -6,6 +6,203 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-02 — Log in / Sign up on the public pages
+
+**Outcome:** Logged-out visitors always see Log in and Sign up on the home and Platform pages, and those buttons open
+`/login` and `/register`. A confirmed session swaps them for Dashboard.
+
+### Found
+- On the live site, logged-out visitors are sent straight to the login page because none of the landing-page work
+  is pushed yet (the last pushed commit is `e329522`, where `/` was still the dashboard). Pushing fixes that.
+- **Bug:** the pages treated "a session cookie exists" as "logged in", so an expired session showed "Open dashboard"
+  and hid Log in and Sign up.
+
+### Changed
+- **New `components/AuthCta.tsx`** (client):
+  - Renders the logged-out buttons first: nav "Log in" + "Sign up"; hero and closing sections "Sign up free" +
+    "Log in".
+  - Then calls `/api/v1/auth/me` once per page, shared by all buttons. Only a 200 swaps in "Dashboard" /
+    "Open dashboard".
+  - A failed or slow check leaves the login buttons in place.
+- `SiteHeader`, the home page and the Platform page use it. They no longer read cookies on the server, so both pages
+  are now static (`○` in the build) and load faster.
+
+### Checked
+- Typecheck and build pass.
+- Server HTML has the `/login` and `/register` links with no cookie and with a stale cookie.
+- In the browser: a valid session shows Dashboard / Open dashboard; an expired cookie shows Log in / Sign up.
+
+---
+
+## 2026-11-02 — Platform page
+
+**Outcome:** A new public page at `/platform`, linked as "Platform" in the top bar and footer, explains how HookFlow
+works in depth. The home page stays short.
+
+### Changed
+- **`app/platform/page.tsx`** (server component), with these parts:
+  - Hero: "How HookFlow *delivers.*", plus pill links to each section.
+  - 01 How it works: the animated `FlowDiagram` on a dark panel, then Accept / Fan out / Deliver / Record.
+  - 02 Lifecycle: the five delivery states as cards, with a note on cancel and replay.
+  - 03 Reliability: the retry rules with a backoff timeline; "saved before we say yes" (transaction, 202, lease,
+    sweeper); idempotent ingestion.
+  - 04 Security: the signed headers; signing, rotation grace (up to 7 days), SSRF/DNS rebinding, secrets at rest.
+  - 05 Visibility: attempts with a replay marker; dashboard, replay, audit log, operations.
+  - 06 Limits: a 12-item grid of the defaults.
+  - A closing section over the photo: "Seen enough? *Send your first event.*"
+- Every number matches the backend settings.
+- **`components/SiteChrome.tsx`:** a shared `SiteHeader` (Platform / Developers / API reference, with the current
+  page highlighted) and `SiteFooter`, used by both public pages. The home page now uses them too.
+- **`middleware.ts`:** `/platform` is public.
+- `.pf-*` styles, responsive at 1000, 760 and 520px. READMEs updated.
+
+### Checked
+- Typecheck and `next build` pass. Logged-out `/platform` → 200.
+- Screenshots: full page (light), lifecycle in dark, phone width.
+- Removed the misleading Delivered → Failed arrow in the lifecycle.
+
+---
+
+## 2026-11-02 — Leaner landing page
+
+**Outcome:** The landing page is cut down to four parts: the photo hero, three short points, the code sample, and
+the closing section. It was repeating itself.
+
+### Changed
+- **Removed:**
+  - the "Delivery" diagram panel and example log, which repeated what the hero animation shows
+    (`components/LiveLog.tsx` deleted; `FlowDiagram` is still used on the login page)
+  - the four-number strip
+  - the four long product sections with their visuals
+  - the "Also included" list
+  - the step list in the Developers section, replaced by one sentence
+- **Added:** a three-column "points" row (Retries that back off / Signed requests / Every attempt, replayable), with
+  serif titles and one or two lines each.
+- About 80 CSS rules for the removed sections deleted.
+- **Hero animation:** the beacon and endpoints moved toward the middle of the photo (orders, billing, notify), so they
+  stay visible when tall screens crop the photo's sides. The labels are wider, so the text fits.
+
+### Checked
+- Typecheck and `next build` pass. Full-page screenshot, and the hero at 1280×1000.
+
+---
+
+## 2026-11-02 — Photo hero
+
+**Outcome:** The landing page opens on a full-screen photo hero built from the user's `bg_image.jpg` (misty mountain
+ridges), with signals animating across it. Nothing is committed yet.
+
+### Changed
+- **Images:** `frontend/public/landing/ridges-{900,1600,2600}.jpg` (61 KB, 171 KB and 488 KB), resized from the
+  10000×6667, 6.5 MB original and served with `srcset`, so phones get the small one.
+- **`components/HeroScene.tsx`** (client):
+  - The photo fills the hero.
+  - An SVG drawn in the photo's own 1200×800 coordinates (`preserveAspectRatio="xMidYMid slice"` matches
+    `object-fit: cover`) keeps the animation pinned to the same peaks at any size.
+  - The animation: a lime beacon on the near treeline sends glowing packets along dashed arcs to three distant peaks
+    (orders, billing, notify). Each answers with a ping and a "200" chip; billing first pings red with "503", gets
+    a retry packet, then turns green.
+  - Gentle scroll parallax (photo at 0.32×, headline lifts and fades), and turned off for reduced motion.
+- **Hero copy:** cream serif headline with "arrive." in lime, over a dark gradient on the trees. The lead starts
+  "However far they have to go." Lime "Start for free" and frosted-glass "Log in" buttons.
+- **Layout:** the diagram panel overlaps the bottom of the photo on wide screens and sits below it on narrower ones.
+  The closing "Ship the feature" section uses the dark treeline from the same photo.
+- **Dark mode** dims the photo and deepens the gradients.
+- **Fix in `middleware.ts`:** the login redirect also caught static files, so logged-out visitors were sent to
+  `/login` instead of receiving `/landing/*.jpg`. The matcher now skips any path with a file extension.
+
+### Checked
+- Typecheck and `next build` pass.
+- Screenshots in light and dark at 1440px, the closing section, and phone width (where the panel used to cover the
+  buttons; fixed).
+- The image returns `200 image/jpeg` when logged out.
+
+### Notes
+- The original `bg_image.jpg` (6.5 MB) is still in the repo root and isn't used by the site. Delete it or add it to
+  `.gitignore` before committing.
+
+---
+
+## 2026-11-02 — Visual redesign
+
+**Outcome:** The site has its own look, replacing the generic one: ink and paper colours with one "signal lime"
+accent, an editorial serif for headlines, and drawn icons. The landing page and login are rebuilt, and the dashboard
+is restyled. Nothing is committed yet.
+
+### Changed
+- **Design tokens** (`globals.css`):
+  - New light (paper `#f6f5f1`) and dark (ink `#0c0c0b`) palettes.
+  - Primary buttons are ink (paper in dark mode). Links are olive in light mode and lime in dark.
+  - `--signal` lime is used for highlights, the logo and the active-nav marker.
+  - New `.ink` class for panels that are always dark.
+- **Fonts** (`app/layout.tsx`, `next/font/google`, self-hosted at build time): Instrument Serif for headlines, Geist
+  for the interface, Geist Mono for code.
+- **Brand:** `components/Brand.tsx` (logo mark: a signal wave between source and destination) and a new
+  `public/icon.svg`.
+- **Icons:** `components/Icons.tsx`, drawn line icons replacing the Unicode glyphs in the sidebar.
+- **Landing page** (`app/page.tsx`), rebuilt:
+  - large serif headline with a lime underline that animates in
+  - a dark "console" with `FlowDiagram` (pure SVG/SMIL: one event fans out to three endpoints; one fails with 503,
+    is retried and succeeds) and `LiveLog` (an illustrative ticker)
+  - a strip of four facts, all taken from the real settings
+  - four numbered product rows, each with its own visual (backoff timeline, signed headers, attempts with a replay
+    marker, durability sequence)
+  - an "Also included" list
+  - a Developers section with `CodeTabs` (curl / Node.js / Python, with copy)
+  - a dark closing call to action, and footer
+- **Login and sign-up:** a split screen, with the dark side showing the animated diagram, the tagline and facts, and
+  a serif heading over the form. On phones, only the form shows.
+- **Dashboard:** serif page titles, refined sidebar (active item with a lime bar), segmented control, buttons,
+  inputs (focus ring), tables, tiles (hover lift) and a page fade-in.
+- **Fix:** failed deliveries no longer say "Gave up after N attempts" twice.
+- **Sidebar:** a "Back to website" link (home icon) at the bottom goes to the landing page.
+- Motion respects `prefers-reduced-motion`: diagram packets are hidden and the log doesn't tick.
+
+### Checked
+- Typecheck and `next build` pass.
+- Screenshots: landing (light and dark, top and lower sections), overview, endpoints and login.
+- Fixed during review:
+  - numbered lists broke one word per line (bold label and text were separate grid cells)
+  - diagram labels overflowed their boxes
+  - log timings wrapped onto a new line
+  - the headline highlight sat too low
+
+---
+
+## 2026-11-02 — Landing page
+
+**Outcome:** `/` is now a public landing page that explains HookFlow, with Log in and Get started buttons. The
+dashboard overview moved to `/overview`. Nothing is committed yet.
+
+### Changed
+- `frontend/app/page.tsx` (new, server component), with these sections:
+  - sticky nav
+  - hero, with an example delivery timeline (503 → retry → 200)
+  - six feature cards
+  - "Live in three steps", with real curl and signature-verification snippets
+  - final call to action, and footer
+- Signed-in visitors (session cookie present) see "Open dashboard" in place of Log in / Get started.
+- The copy only states what the product does; there are no made-up customers or numbers.
+- `app/(dash)/page.tsx` moved to `app/(dash)/overview/page.tsx`. The sidebar and logo now link to `/overview`, and
+  login goes to `/overview` by default.
+- `middleware.ts`: `/` is public. Logged-out visits to any dashboard page redirect to `/login?next=...`.
+- The logo on the login and register pages links back to the landing page.
+- Landing styles (`.lp-*`) in `globals.css` use the existing colour variables, so light and dark both work.
+  Responsive at 900px and 560px.
+- READMEs updated.
+
+### Checked
+- `next build` and typecheck pass.
+- Screenshots in dark, light and phone width.
+- Logged-out `/` → 200; logged-out `/overview` → 307 to `/login?next=%2Foverview`; with a session cookie, `/` shows
+  "Open dashboard".
+
+### Notes
+- An expired session cookie still shows "Open dashboard"; following it leads to the login page.
+- Bookmarks to the old dashboard `/` now land on the landing page.
+
+---
+
 ## 2026-11-01 — Dashboard improvements
 
 **Outcome:** The dashboard is quieter, and it shows the Milestone 3 features: usage against limits, success rate and

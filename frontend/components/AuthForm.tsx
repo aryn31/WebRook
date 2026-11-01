@@ -5,11 +5,11 @@ import { useState, type FormEvent } from "react";
 import { api, ApiError, describeDetails } from "@/lib/api";
 
 function safeNext(): string {
-  if (typeof window === "undefined") return "/";
+  if (typeof window === "undefined") return "/overview";
   const next = new URLSearchParams(window.location.search).get("next");
   // Only allow same-site relative paths.
   if (next && next.startsWith("/") && !next.startsWith("//")) return next;
-  return "/";
+  return "/overview";
 }
 
 function authErrorText(err: unknown, mode: "login" | "register"): { text: string; details: string[] } {
@@ -63,7 +63,12 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
   return (
     <form onSubmit={submit} className="stack" noValidate>
-      <h1 className="auth-title">{mode === "login" ? "Log in" : "Create your account"}</h1>
+      <div className="auth-head">
+        <h1 className="auth-title">{mode === "login" ? "Welcome back" : "Create your account"}</h1>
+        <p className="muted">
+          {mode === "login" ? "Log in to see your events and deliveries." : "Free to start. No card, no SDK."}
+        </p>
+      </div>
       <label className="field">
         <span className="field-label">Email</span>
         <input
@@ -112,7 +117,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           </div>
         </div>
       )}
-      <button type="submit" className="btn btn-primary btn-block" disabled={busy || !email || !password}>
+      <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={busy || !email || !password}>
         {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
       </button>
       <div className="muted small center">

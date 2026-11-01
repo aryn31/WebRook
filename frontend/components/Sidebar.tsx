@@ -4,14 +4,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, type SystemHealth, type User } from "@/lib/api";
+import { Brand } from "./Brand";
+import { IconAudit, IconDeliveries, IconEndpoints, IconEvents, IconHome, IconKey, IconLogout, IconOverview } from "./Icons";
 
 const NAV = [
-  { href: "/", label: "Overview", icon: "◧" },
-  { href: "/events", label: "Events", icon: "⚡" },
-  { href: "/deliveries", label: "Deliveries", icon: "⇄" },
-  { href: "/endpoints", label: "Endpoints", icon: "◎" },
-  { href: "/api-keys", label: "API keys", icon: "⚿" },
-  { href: "/audit-log", label: "Audit log", icon: "☰" },
+  { href: "/overview", label: "Overview", Icon: IconOverview },
+  { href: "/events", label: "Events", Icon: IconEvents },
+  { href: "/deliveries", label: "Deliveries", Icon: IconDeliveries },
+  { href: "/endpoints", label: "Endpoints", Icon: IconEndpoints },
+  { href: "/api-keys", label: "API keys", Icon: IconKey },
+  { href: "/audit-log", label: "Audit log", Icon: IconAudit },
 ];
 
 const STATUS_POLL_MS = 60_000;
@@ -82,28 +84,30 @@ export function Sidebar() {
     window.location.assign("/login");
   }
 
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
+  const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
 
   return (
     <aside className="sidebar">
-      <Link href="/" className="brand">
-        <span className="brand-mark" aria-hidden>H</span> HookFlow
-      </Link>
+      <Brand href="/overview" className="sidebar-brand" />
       <nav className="nav">
         {NAV.map((n) => (
           <Link key={n.href} href={n.href} className={`nav-link${isActive(n.href) ? " active" : ""}`}>
-            <span className="nav-icon" aria-hidden>{n.icon}</span>
+            <n.Icon className="nav-icon" />
             {n.label}
           </Link>
         ))}
       </nav>
       <div className="sidebar-foot">
+        <Link href="/" className="nav-link nav-home">
+          <IconHome className="nav-icon" />
+          Back to website
+        </Link>
         <SystemStatus />
         <div className="user-email" title={user?.email}>
           {user ? user.email : <span className="muted">…</span>}
         </div>
-        <button type="button" className="btn btn-sm btn-ghost" onClick={logout} disabled={loggingOut}>
-          {loggingOut ? "Logging out…" : "Log out"}
+        <button type="button" className="btn btn-sm btn-ghost logout" onClick={logout} disabled={loggingOut}>
+          <IconLogout size={15} /> {loggingOut ? "Logging out…" : "Log out"}
         </button>
       </div>
     </aside>

@@ -17,7 +17,7 @@ docker compose up --build
 
 | What | Where |
 | --- | --- |
-| Dashboard | http://localhost:3000 |
+| Landing page and dashboard | http://localhost:3000 (dashboard at `/overview`) |
 | API + interactive docs | http://localhost:8000/docs |
 | Test receiver | `http://receiver:9000/...` from inside HookFlow; watch it with `docker compose logs -f receiver` |
 
