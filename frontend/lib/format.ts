@@ -100,7 +100,7 @@ export function explainDelivery(d: Delivery): Explanation {
     case "delivered":
       return {
         tone: "delivered",
-        text: `Delivered${d.last_status_code != null ? ` (HTTP ${d.last_status_code})` : ""} on attempt ${d.attempt_count}${
+        text: `Delivered${d.last_status_code != null ? ` (HTTP ${d.last_status_code})` : ""} on attempt ${used}${
           d.delivered_at ? ` at ${formatClock(d.delivered_at)}` : ""
         }.`,
       };
@@ -118,7 +118,7 @@ export function explainDelivery(d: Delivery): Explanation {
     case "retrying":
       return {
         tone: "retrying",
-        text: `Attempt ${d.attempt_count} failed${reason ? `: ${reason}` : ""}.${
+        text: `Attempt ${attempts} failed${reason ? `: ${reason}` : ""}.${
           d.next_attempt_at
             ? ` Next retry scheduled for ${formatClock(d.next_attempt_at)} (${relative(d.next_attempt_at)}).`
             : " A retry is scheduled."
@@ -130,7 +130,7 @@ export function explainDelivery(d: Delivery): Explanation {
         tone: "pending",
         text:
           d.attempt_count > 0
-            ? `Replay queued — attempt ${d.attempt_count + 1} ${
+            ? `Replay queued — attempt 1 of ${allowed} ${
                 d.next_attempt_at ? `scheduled for ${formatClock(d.next_attempt_at)}` : "will be sent shortly"
               }.`
             : d.next_attempt_at

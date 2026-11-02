@@ -6,6 +6,27 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-02 — Attempt counts after replays
+
+**Outcome:** Every delivery message now counts attempts from the last replay, so a delivery replayed many times no
+longer shows numbers like "Attempt 63 failed".
+
+### Found
+- The table and the "failed" / "processing" messages already used the per-run count (added in Milestone 3). Three
+  messages on the delivery detail still used the running total.
+
+### Changed
+- `frontend/lib/format.ts` (`explainDelivery`):
+  - Delivered: "on attempt N" counts from the last replay.
+  - Retrying: "Attempt 2 of 5 failed…" instead of "Attempt 62 failed…".
+  - Pending after a replay: "Replay queued — attempt 1 of 5…" instead of "attempt 63".
+- The full running total is still shown in the table's tooltip and in the attempt history.
+
+### Checked
+- `tsc --noEmit` passes.
+
+---
+
 ## 2026-11-02 — Log in / Sign up on the public pages
 
 **Outcome:** Logged-out visitors always see Log in and Sign up on the home and Platform pages, and those buttons open
