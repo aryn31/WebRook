@@ -11,18 +11,30 @@ def is_retryable_status(status: int) -> bool:
     return status in RETRYABLE_STATUS or 500 <= status <= 599
 
 
-def retry_delay_seconds(attempt_number: int, retry_after: str | None = None) -> float:
+def retry_delay_seconds(
+    attempt_number: int, retry_after: str | None = None, schedule: list[int] | None = None
+) -> float:
     """Delay before the next attempt, after ``attempt_number`` attempts have failed.
 
-    Exponential (x4 per attempt: ~30s, 2m, 8m, 32m) with +/-25% jitter so many failing deliveries
-    don't all retry at the same instant. A larger Retry-After from the destination is honoured, up to the cap.
+    Default: exponential (x4 per attempt: ~30s, 2m, 8m, 32m) with +/-25% jitter so many failing deliveries
+    don't all retry at the same instant.
+
+    With an endpoint's custom ``schedule``, the delay is ``schedule[attempt_number - 1]`` (the last value
+    repeats) with +/-10% jitter, so a custom schedule is followed closely but deliveries still spread out.
+
+    Either way a larger Retry-After from the destination is honoured, up to the cap.
     """
     s = get_settings()
-    base = s.retry_base_delay_seconds * (4 ** max(attempt_number - 1, 0))
-    delay = min(base, s.retry_max_delay_seconds) * random.uniform(0.75, 1.25)
+    if schedule:
+        cap = max(s.retry_max_delay_seconds, max(schedule))
+        delay = schedule[min(max(attempt_number, 1), len(schedule)) - 1] * random.uniform(0.9, 1.1)
+    else:
+        cap = s.retry_max_delay_seconds
+        base = s.retry_base_delay_seconds * (4 ** max(attempt_number - 1, 0))
+        delay = min(base, cap) * random.uniform(0.75, 1.25)
     hinted = _parse_retry_after(retry_after)
     if hinted is not None:
-        delay = max(delay, min(hinted, s.retry_max_delay_seconds))
+        delay = max(delay, min(hinted, cap))
     return delay
 
 

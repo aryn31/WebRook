@@ -51,12 +51,50 @@ class UserSession(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ses"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    # The account this session is working in: NULL for the user's own account, or a team the user belongs to.
+    account_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime] = _now_col()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    user: Mapped[User] = relationship(lazy="joined")
+    user: Mapped[User] = relationship(lazy="joined", foreign_keys=[user_id])
+
+
+class AccountMember(Base):
+    """A user who works in someone else's account (a team). The account owner is implicit and not listed here.
+
+    An account is identified by its owner's user ID, which is the ``user_id`` on all of the account's data.
+    """
+
+    __tablename__ = "account_members"
+
+    account_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16))  # admin, developer or viewer
+    invited_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _now_col()
+
+    user: Mapped[User] = relationship(lazy="joined", foreign_keys=[user_id])
+
+    __table_args__ = (Index("ix_account_members_user_id", "user_id"),)
+
+
+class AccountInvite(Base):
+    """An invitation to join an account. Only a hash of the token is stored; the link is shown once."""
+
+    __tablename__ = "account_invites"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("inv"))
+    account_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(320))
+    role: Mapped[str] = mapped_column(String(16))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    invited_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _now_col()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ApiKey(Base):
@@ -67,11 +105,14 @@ class ApiKey(Base):
     name: Mapped[str] = mapped_column(String(100))
     prefix: Mapped[str] = mapped_column(String(32), unique=True)
     key_hash: Mapped[str] = mapped_column(String(64))
+    # What the key may do (see app/permissions.py). NULL means every API scope (keys made before scopes existed).
+    scopes: Mapped[list[str] | None] = mapped_column(JSONB)
+    created_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = _now_col()
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    user: Mapped[User] = relationship(lazy="joined")
+    user: Mapped[User] = relationship(lazy="joined", foreign_keys=[user_id])
 
 
 class Endpoint(Base):
@@ -88,6 +129,9 @@ class Endpoint(Base):
     previous_secret_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Attempts per delivery for new deliveries to this endpoint, including the first.
     max_attempts: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
+    # Seconds to wait before each retry: [after attempt 1, after attempt 2, ...]. The last value repeats.
+    # NULL uses the default exponential backoff.
+    retry_schedule: Mapped[list[int] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = _now_col()
     updated_at: Mapped[datetime] = _now_col(onupdate=func.now())
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -105,7 +149,7 @@ class EndpointSubscription(Base):
     __tablename__ = "endpoint_subscriptions"
 
     endpoint_id: Mapped[str] = mapped_column(ForeignKey("endpoints.id", ondelete="CASCADE"), primary_key=True)
-    # Exact event type, or "*" for every event type.
+    # Exact event type, "*" for every event type, or a pattern like "order.*" (any type starting with "order.").
     event_type: Mapped[str] = mapped_column(String(100), primary_key=True)
 
     __table_args__ = (Index("ix_endpoint_subscriptions_event_type", "event_type"),)
@@ -261,6 +305,8 @@ class AuditLog(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     actor_type: Mapped[str] = mapped_column(String(16))  # "session" or "api_key"
     api_key_id: Mapped[str | None] = mapped_column(ForeignKey("api_keys.id", ondelete="SET NULL"))
+    # The person who did it (for API keys, the key's creator). user_id above is the account it happened in.
+    actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     action: Mapped[str] = mapped_column(String(64))
     resource_type: Mapped[str | None] = mapped_column(String(32))
     resource_id: Mapped[str | None] = mapped_column(String(32))

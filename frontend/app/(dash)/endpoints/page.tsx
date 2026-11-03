@@ -7,6 +7,13 @@ import { api, MAX_ATTEMPTS_DEFAULT, type EndpointWithHealth, type EndpointWithSe
 import { HealthBadge } from "@/components/EndpointHealth";
 import { EventTypeList, EventTypesInput } from "@/components/EventTypesInput";
 import { MaxAttemptsInput, maxAttemptsError } from "@/components/MaxAttemptsInput";
+import { useMe } from "@/components/MeContext";
+import {
+  RetryScheduleInput,
+  scheduleDraftError,
+  scheduleDraftValue,
+  type ScheduleDraft,
+} from "@/components/RetryScheduleInput";
 import { Empty, ErrorBox, Loading, PageHeader, SecretBox, Time } from "@/components/ui";
 
 function CreateForm({ onCreated, onCancel }: { onCreated: (e: EndpointWithSecret) => void; onCancel: () => void }) {
@@ -14,6 +21,7 @@ function CreateForm({ onCreated, onCancel }: { onCreated: (e: EndpointWithSecret
   const [description, setDescription] = useState("");
   const [types, setTypes] = useState<string[]>(["*"]);
   const [maxAttempts, setMaxAttempts] = useState(String(MAX_ATTEMPTS_DEFAULT));
+  const [schedule, setSchedule] = useState<ScheduleDraft>({ custom: false, text: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const [localErr, setLocalErr] = useState<string | null>(null);
@@ -41,6 +49,11 @@ function CreateForm({ onCreated, onCancel }: { onCreated: (e: EndpointWithSecret
       setLocalErr(maErr);
       return;
     }
+    const schedErr = scheduleDraftError(schedule);
+    if (schedErr) {
+      setLocalErr(schedErr);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -49,6 +62,7 @@ function CreateForm({ onCreated, onCancel }: { onCreated: (e: EndpointWithSecret
         description: description.trim() || undefined,
         event_types: types,
         max_attempts: Number(maxAttempts),
+        retry_schedule: scheduleDraftValue(schedule),
       });
       onCreated(created);
     } catch (e2) {
@@ -79,6 +93,7 @@ function CreateForm({ onCreated, onCancel }: { onCreated: (e: EndpointWithSecret
       </label>
       <EventTypesInput value={types} onChange={setTypes} />
       <MaxAttemptsInput value={maxAttempts} onChange={setMaxAttempts} />
+      <RetryScheduleInput value={schedule} onChange={setSchedule} maxAttempts={Number(maxAttempts)} />
       {localErr && <div className="alert alert-error">{localErr}</div>}
       <ErrorBox error={err} />
       <div className="row">
@@ -101,6 +116,8 @@ export default function EndpointsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [created, setCreated] = useState<EndpointWithSecret | null>(null);
+  const { can } = useMe();
+  const canWrite = can("endpoints:write");
 
   const load = useCallback(async (after: string | null) => {
     setLoadErr(null);
@@ -126,6 +143,7 @@ export default function EndpointsPage() {
         title="Endpoints"
         sub="HTTPS URLs that receive your events, signed with a per-endpoint secret."
         actions={
+          canWrite &&
           !showForm &&
           !created && (
             <button type="button" className="btn btn-primary" onClick={() => setShowForm(true)}>
@@ -180,8 +198,8 @@ export default function EndpointsPage() {
         {!items && !loadErr && <Loading />}
         {items && items.length === 0 && (
           <Empty title="No endpoints yet">
-            Add the URL where you want to receive webhooks.{" "}
-            {!showForm && (
+            {canWrite ? "Add the URL where you want to receive webhooks." : "Nobody has added an endpoint yet."}{" "}
+            {canWrite && !showForm && (
               <button type="button" className="btn btn-sm btn-primary" onClick={() => setShowForm(true)}>
                 Add endpoint
               </button>

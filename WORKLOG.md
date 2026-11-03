@@ -6,6 +6,85 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-02 — Milestone 4 (Product Improvements)
+
+**Outcome:** Everything in Milestone 4 except email alerts: team accounts, scoped API keys, pattern subscriptions,
+custom retry schedules, bulk replay, and Python and Node SDKs. Endpoint health was already done.
+
+### Built
+- **Team accounts** (`app/routers/team.py`, `app/permissions.py`, `app/deps.py`):
+  - An account is still identified by its owner's user ID, so no data moved. `Principal.user` is the account and
+    `Principal.actor` is the person acting.
+  - Roles: owner (implicit), admin, developer, viewer. Every route needs one permission (see the table in
+    `docs/api.md#permissions`).
+  - Invites are one-time links (`/invite/<token>`, hash stored, 7 days). No email is sent. The invitee must be
+    logged in with the invited email. A new invite to the same email replaces the old link.
+  - Sessions have an `account_id`. `POST /v1/auth/switch-account` changes it; removed members fall back to their
+    own account. `GET /v1/auth/me` returns the account, role, permissions and every account the user can switch to.
+  - Only the owner can manage admins. The owner can't be removed or changed.
+  - Audit entries record the acting user (`actor_user_id`); the API returns their email.
+- **Scoped API keys:** seven scopes (`events:write`, `events:read`, `deliveries:read`, `deliveries:replay`,
+  `endpoints:read`, `endpoints:write`, `audit:read`). A key can't have more than its creator's role. Keys made before
+  this have NULL scopes and keep full access. `GET /v1/api-keys/scopes`.
+- **Pattern subscriptions:** `order.*` matches every type starting with `order.`. Ingest turns the event type into
+  every matching pattern and uses the same indexed `IN` query.
+- **Custom retry schedules:** `endpoints.retry_schedule`, 1–9 waits of 1s–24h; the last repeats. ±10% jitter, and
+  a longer `Retry-After` still wins. Read at retry time, so a change affects deliveries already retrying.
+- **Bulk replay:** `POST /v1/deliveries/replay` with endpoint, event type, status and time filters, up to 500 per
+  request, `dry_run`, and its own rate limit (`BULK_REPLAY_RATE_LIMIT_PER_MINUTE`, 10/min). Only enabled endpoints.
+- **Migration `0004`:** `account_members`, `account_invites`, `sessions.account_id`, `api_keys.scopes` and
+  `created_by_user_id`, `endpoints.retry_schedule`, `audit_logs.actor_user_id`. Backfills the creator and actor
+  columns with the account owner.
+- **SDKs** (`sdks/python`, `sdks/node`, built by a helper agent): webhook verification, a client for events,
+  deliveries (including bulk replay) and endpoints, auto-pagination, typed errors. No runtime dependencies.
+  Retries only safe requests (and `POST /v1/events` with an idempotency key).
+- **Dashboard:**
+  - API keys: access presets (full, send only, read only, custom) and an Access column.
+  - Endpoints: patterns in the event-types input; retry timing (default or custom) on create, edit and details.
+  - Bulk replay: on an endpoint's page and on the Failed tab of Deliveries, with a check before replaying.
+  - Buttons the role can't use are hidden (`components/MeContext.tsx` provides `useMe().can(...)`).
+  - Audit log: names the person, and labels for the new actions.
+  - Team page, invite page and account switcher (built by a helper agent): `/team` (members, roles, invite
+    links, open invites, a roles table), `/invite/<token>` (accept, wrong-email and expired states), and an account
+    picker in the sidebar. Log in / Sign up links now keep `?next=` so a new invitee comes back to the invite.
+- **Docs:** `docs/api.md` (permissions, team, scopes, patterns, retry schedule, bulk replay; fixed the signature
+  snippets), README, PRD status, `docs/operations.md`.
+
+### Decisions
+- **Tenancy stays on the owner's user ID** rather than a new `accounts` table. Every existing query and index keeps
+  working; a team is "the owner's account plus members".
+- **Keys belong to the account**, not the person, so they keep working when the creator leaves. Their scopes are
+  capped at creation time.
+- **Invites by link, not email**, because email isn't set up yet (it's the remaining Milestone 4 item).
+
+### Bugs found and fixed
+- Admins could revoke an owner's admin invite though they can't create one. Now only the owner can.
+- The doc's Node verification snippet threw on a non-ASCII signature (it compared string length, not byte length)
+  and skipped the timestamp check for a non-numeric timestamp. The Python one raised on a bad timestamp. Both fixed.
+- The webhook example body showed `created_at` without microseconds; the real body has them.
+
+### Checked
+- `pytest`: 163 passed (39 new in `tests/test_milestone4.py`).
+- Migration `0004` upgrades and downgrades cleanly; `alembic check` finds no difference from the models.
+- SDKs: Python 69 passed, Node 47 passed, offline. They cross-check signatures against `backend/app/signing.py` and
+  the doc snippets.
+- Frontend typecheck and `next build` pass.
+- End to end in a throwaway Docker stack: a send-only key could send but got 403 reading; an `order.*` endpoint got
+  `order.item.added`; with `retry_schedule: [3]` the second attempt came 3.3s after the first; after fixing the URL,
+  bulk replay (dry run, then real) delivered it. Dashboard pages all return 200.
+- The helper agent checked the team flow in headless Chrome: invite, wrong-email rejection, role change, switching
+  accounts, leaving, in light, dark and phone widths.
+
+### Left
+- Email alerts.
+- The PRD PDF (`docs/HookFlow-PRD-v1.2.pdf`) predates the Milestone 4 status notes in `docs/PRD.md`.
+- SDKs are tested on Python 3.12 and Node 26 only; the declared minimums (3.10, 18) weren't available.
+- SDKs aren't published to PyPI or npm.
+- Ideas from building the UI: a public invite preview so the sign-up page can say who invited you; show who sent
+  each invite.
+
+---
+
 ## 2026-11-02 — Attempt counts after replays
 
 **Outcome:** Every delivery message now counts attempts from the last replay, so a delivery replayed many times no

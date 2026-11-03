@@ -3,7 +3,7 @@
 Webhook delivery platform. Send an event to HookFlow once; it delivers it to every subscribed endpoint, signs it,
 retries failures, and records every attempt.
 
-**Status: Milestone 3 (Public Beta Hardening) done.** See [Milestones](#milestones).
+**Status: Milestone 4 (Product Improvements) done, except email alerts.** See [Milestones](#milestones).
 
 ## Quick start
 
@@ -51,7 +51,10 @@ docker compose run --rm api pytest -q
 Tests use a separate `hookflow_test` database and Redis DB 15. They cover auth, API keys, tenant isolation,
 ingestion, idempotency (including concurrent requests), the outbox with Redis down, signing and secret rotation,
 retries, replay, the audit log, the claim/lease logic and crash recovery, plus SSRF and DNS-rebinding protection,
-DNS and database outages, ingestion limits and quotas, per-endpoint concurrency, retention, metrics and alerts.
+DNS and database outages, ingestion limits and quotas, per-endpoint concurrency, retention, metrics and alerts,
+plus team roles and invites, API key scopes, pattern subscriptions, retry schedules and bulk replay.
+
+SDK tests run offline: `cd sdks/python && pytest`, and `cd sdks/node && npm install && npm test`.
 
 Load test: [`loadtest/ingest.py`](loadtest/ingest.py); results and how to run it are in
 [docs/operations.md](docs/operations.md#capacity).
@@ -64,6 +67,8 @@ Load test: [`loadtest/ingest.py`](loadtest/ingest.py); results and how to run it
 - [docs/operations.md](docs/operations.md): running it in production: every setting, metrics, alerts, retention,
   security notes and load-test results.
 - [frontend/README.md](frontend/README.md): running the dashboard on its own.
+- [sdks/python](sdks/python/README.md) and [sdks/node](sdks/node/README.md): client libraries, including webhook
+  signature verification for receivers.
 
 ## How it works
 
@@ -162,5 +167,14 @@ background delivery, delivery history, and the dashboard.
 - Attempt counts in the dashboard restart after a replay
 - Load tests, and a single-container start script that restarts if a process dies
 
-**Next (Milestone 4):** email alerts, team accounts, SDKs, endpoint health, custom retry schedules, pattern
-subscriptions, scoped API keys, bulk replay.
+**Milestone 4 (Product Improvements):**
+
+- Team accounts: invite people by link, with owner, admin, developer and viewer roles; switch between accounts
+- Scoped API keys, e.g. a key that can only send events
+- Pattern subscriptions such as `order.*`
+- Custom retry schedules per endpoint
+- Bulk replay of failed deliveries, with a dry run, from the API and the dashboard
+- Endpoint health badges (healthy, degraded, failing) over the last 24 hours
+- [Python and Node SDKs](sdks/): send events, manage endpoints, replay, and verify webhook signatures
+
+**Next:** email alerts when an endpoint keeps failing.

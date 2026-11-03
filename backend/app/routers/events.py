@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app import audit, outbox, ratelimit
 from app.config import get_settings
-from app.deps import DB, CurrentPrincipal
+from app.deps import DB, CurrentPrincipal, DeliveriesReplay, EventsRead, EventsWrite
 from app.errors import ApiError, not_found
 from app.ids import new_id
 from app.models import Delivery, DeliveryStatus, Endpoint, EndpointSubscription, Event, IdempotencyKey, User
@@ -32,6 +32,7 @@ from app.schemas import (
     EventSummary,
     ListOf,
     Page,
+    matching_subscriptions,
 )
 
 log = logging.getLogger("hookflow.api")
@@ -162,7 +163,7 @@ def _ingest_once(db: Session, user_id: str, body: EventIn, key: str | None) -> I
             Endpoint.user_id == user_id,
             Endpoint.enabled.is_(True),
             Endpoint.archived_at.is_(None),
-            EndpointSubscription.event_type.in_([body.event_type, "*"]),
+            EndpointSubscription.event_type.in_(matching_subscriptions(body.event_type)),
         )
         .distinct()
     ).all()
@@ -233,7 +234,7 @@ def _ingest(db: Session, user_id: str, body: EventIn, key: str | None) -> Ingest
         ],
     },
 )
-async def create_event(request: Request, response: Response, principal: CurrentPrincipal, db: DB) -> dict:
+async def create_event(request: Request, response: Response, principal: EventsWrite, db: DB) -> dict:
     rate = await run_in_threadpool(_check_rate, principal.user)
     max_bytes = get_settings().max_payload_bytes
     raw = await request.body()
@@ -299,7 +300,7 @@ def _owned_event(db: Session, principal: CurrentPrincipal, event_id: str) -> Eve
 
 @router.get("", response_model=Page[EventSummary])
 def list_events(
-    principal: CurrentPrincipal,
+    principal: EventsRead,
     db: DB,
     limit: Limit = 25,
     cursor: Cursor = None,
@@ -324,7 +325,7 @@ def list_events(
 
 
 @router.get("/{event_id}", response_model=EventOut)
-def get_event(event_id: str, principal: CurrentPrincipal, db: DB) -> EventOut:
+def get_event(event_id: str, principal: EventsRead, db: DB) -> EventOut:
     e = _owned_event(db, principal, event_id)
     return EventOut(
         id=e.id, event_type=e.event_type, created_at=e.created_at, data=e.payload,
@@ -333,7 +334,7 @@ def get_event(event_id: str, principal: CurrentPrincipal, db: DB) -> EventOut:
 
 
 @router.get("/{event_id}/deliveries", response_model=ListOf[DeliveryOut])
-def list_event_deliveries(event_id: str, principal: CurrentPrincipal, db: DB) -> dict:
+def list_event_deliveries(event_id: str, principal: EventsRead, db: DB) -> dict:
     _owned_event(db, principal, event_id)
     rows = db.scalars(
         select(Delivery)
@@ -346,7 +347,7 @@ def list_event_deliveries(event_id: str, principal: CurrentPrincipal, db: DB) ->
 @router.post("/{event_id}/replay", status_code=202, response_model=EventReplayed)
 def replay_event(
     event_id: str,
-    principal: CurrentPrincipal,
+    principal: DeliveriesReplay,
     db: DB,
     body: Annotated[EventReplayIn | None, Body()] = None,
 ) -> dict:

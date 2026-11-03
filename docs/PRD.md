@@ -1,6 +1,6 @@
 # HookFlow Product Requirements Document (PRD)
 
-**Version:** 1.2 · **Status:** Public beta ready (Milestones 1–3 complete; Milestone 4 next) · **Last updated:** 2026-11-01  
+**Version:** 1.2 · **Status:** Public beta ready (Milestones 1–3 complete; Milestone 4 complete except email alerts) · **Last updated:** 2026-11-01  
 **Product type:** Developer Infrastructure / Backend SaaS  
 **Primary objective:** Build a reliable, secure, and usable webhook delivery platform.
 
@@ -1221,18 +1221,21 @@ be used safely within documented limits. *(Met.)*
 
 ### Milestone 4: Product Improvements (Week 6 and beyond)
 
-Potential additions:
+Potential additions, with their status (2026-11-02):
 
-- Email alerts.
-- Team accounts.
-- Usage analytics.
-- SDKs.
-- Endpoint health indicators.
-- Advanced retry configuration (custom schedules per endpoint).
-- Customer quotas.
-- Pattern subscriptions such as `order.*` *(added)*.
-- Scoped API keys *(added)*.
-- Bulk replay, for example all failed deliveries for an endpoint in a time range *(added)*.
+- Email alerts. *Not started.*
+- Team accounts. **Done:** an account is identified by its owner. Owners and admins invite people by a one-time link
+  (no email is sent); members are admin, developer or viewer. Every route checks a permission, and the audit log
+  names the person who acted. Sessions switch between accounts.
+- Usage analytics. *Partly:* `GET /v1/stats` and `GET /v1/usage` (Milestone 3).
+- SDKs. **Done:** Python and Node, with no runtime dependencies, in `sdks/`.
+- Endpoint health indicators. **Done:** idle, healthy, degraded or failing over 24 hours.
+- Advanced retry configuration. **Done:** `retry_schedule` per endpoint, a list of up to 9 waits (last repeats).
+- Customer quotas. *Partly:* per-account overrides in the `users` table (Milestone 3); no UI.
+- Pattern subscriptions such as `order.*`. **Done:** a trailing `.*` matches any deeper type.
+- Scoped API keys. **Done:** seven scopes; a key can't exceed its creator's role. Existing keys keep full access.
+- Bulk replay. **Done:** `POST /v1/deliveries/replay` with endpoint, event type, status and time filters, up to
+  500 per request, and a dry run.
 
 These are secondary to the reliability of the core delivery pipeline.
 

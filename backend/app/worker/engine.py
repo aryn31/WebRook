@@ -28,7 +28,9 @@ from sqlalchemy.orm import lazyload
 from app import outbox
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import AuditLog, Delivery, DeliveryAttempt, DeliveryStatus, Event, IdempotencyKey, OutboxMessage
+from app.models import (
+    AuditLog, Delivery, DeliveryAttempt, DeliveryStatus, Endpoint, Event, IdempotencyKey, OutboxMessage,
+)
 from app.security import decrypt_secret
 from app.signing import sign
 from app.worker import concurrency
@@ -234,8 +236,10 @@ def _record(delivery_id: str, attempt_number: int, started: datetime, duration_m
                 success=o.success,
             )
         )
-        max_attempts, base = db.execute(
-            select(Delivery.max_attempts, Delivery.retry_base_attempt).where(Delivery.id == delivery_id)
+        max_attempts, base, schedule = db.execute(
+            select(Delivery.max_attempts, Delivery.retry_base_attempt, Endpoint.retry_schedule)
+            .join(Endpoint, Endpoint.id == Delivery.endpoint_id)
+            .where(Delivery.id == delivery_id)
         ).one()
         # Attempts in the current run: since creation, or since the last manual replay.
         run_attempt = attempt_number - base
@@ -244,7 +248,7 @@ def _record(delivery_id: str, attempt_number: int, started: datetime, duration_m
         if o.success:
             values |= {"status": DeliveryStatus.DELIVERED, "delivered_at": now, "last_error": None}
         elif o.retryable and attempt_number < max_attempts:
-            next_at = now + timedelta(seconds=retry_delay_seconds(run_attempt, o.retry_after))
+            next_at = now + timedelta(seconds=retry_delay_seconds(run_attempt, o.retry_after, schedule))
             values |= {
                 "status": DeliveryStatus.RETRYING,
                 "next_attempt_at": next_at,

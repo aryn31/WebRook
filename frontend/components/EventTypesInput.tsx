@@ -11,6 +11,17 @@ export function validateEventType(t: string): string | null {
   return null;
 }
 
+/** A subscription: an event type, or a pattern like "order.*" (every type starting with "order."). */
+export function validateSubscription(t: string): string | null {
+  if (t.endsWith(".*")) {
+    const prefix = t.slice(0, -2);
+    if (t.length <= 100 && EVENT_TYPE_RE.test(prefix)) return null;
+    return `“${t}” is not a valid pattern. Patterns end in .* after a prefix, e.g. order.*.`;
+  }
+  if (t.includes("*")) return `“${t}” is not valid. * only works at the end, as in order.*.`;
+  return validateEventType(t);
+}
+
 /** Chips input for event types; "*" (all events) is a separate toggle. */
 export function EventTypesInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const [draft, setDraft] = useState("");
@@ -30,7 +41,7 @@ export function EventTypesInput({ value, onChange }: { value: string[]; onChange
       return;
     }
     for (const p of parts) {
-      const e = validateEventType(p);
+      const e = validateSubscription(p);
       if (e) {
         setErr(e);
         return;
@@ -74,7 +85,7 @@ export function EventTypesInput({ value, onChange }: { value: string[]; onChange
             ))}
             <input
               className="chips-entry mono"
-              placeholder={value.length ? "Add another…" : "order.created, order.paid"}
+              placeholder={value.length ? "Add another…" : "order.created, invoice.*"}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKey}
@@ -82,7 +93,12 @@ export function EventTypesInput({ value, onChange }: { value: string[]; onChange
             />
           </div>
           <span className={`field-hint${err ? " text-failed" : ""}`}>
-            {err ?? "Press Enter or comma to add. Comma-separated lists can be pasted."}
+            {err ?? (
+              <>
+                Press Enter or comma to add. Use a pattern like <code className="mono">order.*</code> to match every
+                type that starts with <code className="mono">order.</code>
+              </>
+            )}
           </span>
         </>
       )}
@@ -96,7 +112,7 @@ export function EventTypeList({ types }: { types: string[] }) {
   return (
     <span className="pill-row">
       {types.map((t) => (
-        <span key={t} className="chip chip-static mono">
+        <span key={t} className="chip chip-static mono" title={t.endsWith(".*") ? `Every event type starting with ${t.slice(0, -1)}` : undefined}>
           {t}
         </span>
       ))}

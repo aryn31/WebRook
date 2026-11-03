@@ -7,10 +7,11 @@ from sqlalchemy.exc import IntegrityError
 from app import audit, ratelimit
 from app.clientip import client_ip
 from app.config import get_settings
-from app.deps import DB, Principal, SessionPrincipal
+from app.deps import DB, Principal, SessionPrincipal, member_role
 from app.errors import ApiError
-from app.models import User, UserSession
-from app.schemas import Credentials, RegisterIn, UserEnvelope, UserOut
+from app.models import AccountMember, User, UserSession
+from app.permissions import API_SCOPES, SESSION_ONLY
+from app.schemas import AccountOut, Credentials, MeOut, RegisterIn, SwitchAccountIn, UserEnvelope, UserOut
 from app.security import hash_password, new_session_token, sha256_hex, verify_password
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
@@ -84,6 +85,43 @@ def logout(principal: SessionPrincipal, response: Response, db: DB) -> Response:
     return out
 
 
-@router.get("/me", response_model=UserEnvelope)
-def me(principal: SessionPrincipal) -> dict:
-    return {"user": UserOut.model_validate(principal.user)}
+def _accounts(db: DB, me: User) -> list[AccountOut]:
+    own = AccountOut(id=me.id, owner_email=me.email, role="owner", personal=True)
+    teams = db.execute(
+        select(AccountMember.account_id, AccountMember.role, User.email)
+        .join(User, User.id == AccountMember.account_id)
+        .where(AccountMember.user_id == me.id)
+        .order_by(User.email)
+    ).all()
+    return [own, *(AccountOut(id=a, owner_email=e, role=r, personal=False) for a, r, e in teams)]
+
+
+def _me(db: DB, principal: Principal) -> dict:
+    accounts = _accounts(db, principal.actor)
+    current = next(a for a in accounts if a.id == principal.user.id)
+    order = API_SCOPES + SESSION_ONLY
+    return {
+        "user": UserOut.model_validate(principal.actor),
+        "account": current,
+        "permissions": [p for p in order if p in principal.permissions],
+        "accounts": accounts,
+    }
+
+
+@router.get("/me", response_model=MeOut)
+def me(principal: SessionPrincipal, db: DB) -> dict:
+    return _me(db, principal)
+
+
+@router.post("/switch-account", response_model=MeOut)
+def switch_account(body: SwitchAccountIn, principal: SessionPrincipal, db: DB) -> dict:
+    """Work in another account: your own, or a team you belong to. Applies to this session only."""
+    me = principal.actor
+    role = member_role(db, body.account_id, me.id)
+    if role is None:
+        raise ApiError(404, "Account not found, or you're not a member.", code="not_found")
+    session = db.get(UserSession, principal.session.id)
+    session.account_id = None if body.account_id == me.id else body.account_id
+    db.commit()
+    account = db.get(User, body.account_id)
+    return _me(db, Principal(user=account, via="session", session=session, actor=me, role=role, ip=principal.ip))

@@ -5,6 +5,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, errorMessage, type Attempt, type Delivery, type Replay } from "@/lib/api";
 import { actorLabel, explainDelivery, formatDuration, formatLocal, formatUtc, STATUS_LABEL } from "@/lib/format";
 import { ErrorBox, Loading, StatusPill, Time } from "./ui";
+import { useMe } from "./MeContext";
 
 const NEEDS_EXPLAINING = new Set(["failed", "retrying", "cancelled"]);
 
@@ -132,6 +133,7 @@ export function ReplayButton({
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
+  const { can } = useMe();
 
   async function go() {
     setBusy(true);
@@ -147,6 +149,8 @@ export function ReplayButton({
       setBusy(false);
     }
   }
+
+  if (!can("deliveries:replay")) return null;
 
   return (
     <span className="replay-action" onClick={(e) => e.stopPropagation()}>

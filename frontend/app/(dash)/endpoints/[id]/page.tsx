@@ -8,6 +8,16 @@ import { HealthBadge } from "@/components/EndpointHealth";
 import { EventTypeList, EventTypesInput } from "@/components/EventTypesInput";
 import { DeliveryTable } from "@/components/DeliveryTable";
 import { MaxAttemptsInput, maxAttemptsError } from "@/components/MaxAttemptsInput";
+import { BulkReplay } from "@/components/BulkReplay";
+import { useMe } from "@/components/MeContext";
+import {
+  describeSchedule,
+  RetryScheduleInput,
+  scheduleDraftError,
+  scheduleDraftValue,
+  scheduleToText,
+  type ScheduleDraft,
+} from "@/components/RetryScheduleInput";
 import { ConfirmButton, CopyButton, Empty, ErrorBox, Loading, PageHeader, SecretBox, Time } from "@/components/ui";
 import { formatClock, formatSeconds, formatUtc, GRACE_DEFAULT, GRACE_OPTIONS, isFuture, relative } from "@/lib/format";
 
@@ -16,6 +26,10 @@ function EditForm({ endpoint, onSaved, onCancel }: { endpoint: Endpoint; onSaved
   const [description, setDescription] = useState(endpoint.description ?? "");
   const [types, setTypes] = useState<string[]>(endpoint.event_types);
   const [maxAttempts, setMaxAttempts] = useState(String(endpoint.max_attempts));
+  const [schedule, setSchedule] = useState<ScheduleDraft>({
+    custom: endpoint.retry_schedule !== null,
+    text: scheduleToText(endpoint.retry_schedule),
+  });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const [localErr, setLocalErr] = useState<string | null>(null);
@@ -38,10 +52,18 @@ function EditForm({ endpoint, onSaved, onCancel }: { endpoint: Endpoint; onSaved
       setLocalErr(maErr);
       return;
     }
+    const schedErr = scheduleDraftError(schedule);
+    if (schedErr) {
+      setLocalErr(schedErr);
+      return;
+    }
+    const newSchedule = scheduleDraftValue(schedule);
+    const scheduleChanged = JSON.stringify(newSchedule) !== JSON.stringify(endpoint.retry_schedule);
     setBusy(true);
     setErr(null);
     try {
       const saved = await api.updateEndpoint(endpoint.id, {
+        ...(scheduleChanged ? { retry_schedule: newSchedule } : {}),
         url: url.trim(),
         description: description.trim() || null,
         event_types: types,
@@ -67,6 +89,7 @@ function EditForm({ endpoint, onSaved, onCancel }: { endpoint: Endpoint; onSaved
       </label>
       <EventTypesInput value={types} onChange={setTypes} />
       <MaxAttemptsInput value={maxAttempts} onChange={setMaxAttempts} editing />
+      <RetryScheduleInput value={schedule} onChange={setSchedule} maxAttempts={Number(maxAttempts)} />
       {localErr && <div className="alert alert-error">{localErr}</div>}
       <ErrorBox error={err} />
       <div className="row">
@@ -226,6 +249,13 @@ function SecretSection({
   );
 }
 
+/** An event type this endpoint receives, for the test button. "order.*" becomes "order.test". */
+function testEventType(types: string[]): string {
+  const first = types.includes("*") ? undefined : types[0];
+  if (!first) return "test.ping";
+  return first.endsWith(".*") ? `${first.slice(0, -2)}.test` : first;
+}
+
 export default function EndpointDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -246,6 +276,8 @@ export default function EndpointDetailPage() {
   const [testBusy, setTestBusy] = useState(false);
   const [testResult, setTestResult] = useState<EventAccepted | null>(null);
   const [testErr, setTestErr] = useState<unknown>(null);
+  const { can } = useMe();
+  const canWrite = can("endpoints:write");
 
   const load = useCallback(async () => {
     setLoadErr(null);
@@ -295,7 +327,7 @@ export default function EndpointDetailPage() {
 
   async function sendTest() {
     if (!endpoint) return;
-    const eventType = endpoint.event_types.includes("*") ? "test.ping" : (endpoint.event_types[0] ?? "test.ping");
+    const eventType = testEventType(endpoint.event_types);
     setTestBusy(true);
     setTestErr(null);
     setTestResult(null);
@@ -341,7 +373,7 @@ export default function EndpointDetailPage() {
   }
   if (!endpoint) return <div className="page"><Loading /></div>;
 
-  const testType = endpoint.event_types.includes("*") ? "test.ping" : (endpoint.event_types[0] ?? "test.ping");
+  const testType = testEventType(endpoint.event_types);
 
   return (
     <div className="page">
@@ -357,16 +389,18 @@ export default function EndpointDetailPage() {
           </span>
         }
         actions={
-          <>
-            <button type="button" className="btn" onClick={toggleEnabled} disabled={toggling}>
-              {toggling ? "Saving…" : endpoint.enabled ? "Disable" : "Enable"}
-            </button>
-            {!editing && (
-              <button type="button" className="btn" onClick={() => setEditing(true)}>
-                Edit
+          canWrite && (
+            <>
+              <button type="button" className="btn" onClick={toggleEnabled} disabled={toggling}>
+                {toggling ? "Saving…" : endpoint.enabled ? "Disable" : "Enable"}
               </button>
-            )}
-          </>
+              {!editing && (
+                <button type="button" className="btn" onClick={() => setEditing(true)}>
+                  Edit
+                </button>
+              )}
+            </>
+          )
         }
       />
       <ErrorBox error={actionErr} />
@@ -409,6 +443,17 @@ export default function EndpointDetailPage() {
             <dd>
               {endpoint.max_attempts} <span className="muted small">per delivery, including the first</span>
             </dd>
+            <dt>Retry timing</dt>
+            <dd>
+              {endpoint.retry_schedule ? (
+                <>
+                  <span className="mono">{scheduleToText(endpoint.retry_schedule)}</span>{" "}
+                  <span className="muted small">{describeSchedule(endpoint.retry_schedule, endpoint.max_attempts)}</span>
+                </>
+              ) : (
+                <span className="muted">Default backoff (about 30s, 2m, 8m, 32m, up to 6h)</span>
+              )}
+            </dd>
             <dt>Created</dt>
             <dd>
               <Time iso={endpoint.created_at} />
@@ -421,40 +466,44 @@ export default function EndpointDetailPage() {
         )}
       </section>
 
-      <SecretSection
-        endpoint={endpoint}
-        onRotated={(exp) => setEndpoint((e) => (e ? { ...e, previous_secret_expires_at: exp } : e))}
-      />
+      {canWrite && (
+        <SecretSection
+          endpoint={endpoint}
+          onRotated={(exp) => setEndpoint((e) => (e ? { ...e, previous_secret_expires_at: exp } : e))}
+        />
+      )}
 
-      <section className="card">
-        <div className="card-head">
-          <h2>Send a test event</h2>
-        </div>
-        <p className="muted small">
-          Sends a <code className="mono">{testType}</code> event through the real pipeline. Every endpoint subscribed to{" "}
-          <code className="mono">{testType}</code> will receive it.
-        </p>
-        <div className="row">
-          <button type="button" className="btn btn-primary" onClick={sendTest} disabled={testBusy}>
-            {testBusy ? "Sending…" : "Send test event"}
-          </button>
-          {testResult && (
-            <span className="small">
-              Accepted ·{" "}
-              {testResult.delivery_count} deliver{testResult.delivery_count === 1 ? "y" : "ies"} created ·{" "}
-              <Link href={`/events/${testResult.event_id}`} className="mono">
-                View {testResult.event_id} →
-              </Link>
-            </span>
-          )}
-        </div>
-        {testResult && testResult.delivery_count === 0 && (
-          <div className="alert alert-warning mt">
-            No deliveries were created{!endpoint.enabled ? " — this endpoint is disabled. Enable it and try again." : "."}
+      {can("events:write") && (
+        <section className="card">
+          <div className="card-head">
+            <h2>Send a test event</h2>
           </div>
-        )}
-        <ErrorBox error={testErr} />
-      </section>
+          <p className="muted small">
+            Sends a <code className="mono">{testType}</code> event through the real pipeline. Every endpoint subscribed to{" "}
+            <code className="mono">{testType}</code> will receive it.
+          </p>
+          <div className="row">
+            <button type="button" className="btn btn-primary" onClick={sendTest} disabled={testBusy}>
+              {testBusy ? "Sending…" : "Send test event"}
+            </button>
+            {testResult && (
+              <span className="small">
+                Accepted ·{" "}
+                {testResult.delivery_count} deliver{testResult.delivery_count === 1 ? "y" : "ies"} created ·{" "}
+                <Link href={`/events/${testResult.event_id}`} className="mono">
+                  View {testResult.event_id} →
+                </Link>
+              </span>
+            )}
+          </div>
+          {testResult && testResult.delivery_count === 0 && (
+            <div className="alert alert-warning mt">
+              No deliveries were created{!endpoint.enabled ? " — this endpoint is disabled. Enable it and try again." : "."}
+            </div>
+          )}
+          <ErrorBox error={testErr} />
+        </section>
+      )}
 
       <section className="card">
         <div className="card-head">
@@ -469,6 +518,15 @@ export default function EndpointDetailPage() {
           <Empty title="No deliveries yet">Send a test event above to see how your endpoint responds.</Empty>
         )}
         {deliveries && deliveries.length > 0 && <DeliveryTable deliveries={deliveries} show={["event"]} />}
+        {deliveries && deliveries.some((d) => d.status === "failed") && endpoint.enabled && (
+          <div className="mt">
+            <BulkReplay
+              filters={{ endpoint_id: endpoint.id }}
+              label="Replay all failed deliveries to this endpoint"
+              onDone={() => setTimeout(() => void loadDeliveries(null), 800)}
+            />
+          </div>
+        )}
         {dCursor && (
           <div className="load-more">
             <button type="button" className="btn" disabled={dLoadingMore} onClick={() => loadDeliveries(dCursor)}>
@@ -478,20 +536,22 @@ export default function EndpointDetailPage() {
         )}
       </section>
 
-      <section className="card card-danger">
-        <div className="card-head">
-          <h2>Archive endpoint</h2>
-        </div>
-        <p className="muted small">
-          Archiving removes the endpoint from lists, stops new deliveries and cancels its unsent deliveries. Delivery history is kept.
-        </p>
-        <ConfirmButton
-          label="Archive endpoint"
-          prompt="Unsent deliveries will be cancelled."
-          confirmLabel="Archive"
-          onConfirm={archive}
-        />
-      </section>
+      {canWrite && (
+        <section className="card card-danger">
+          <div className="card-head">
+            <h2>Archive endpoint</h2>
+          </div>
+          <p className="muted small">
+            Archiving removes the endpoint from lists, stops new deliveries and cancels its unsent deliveries. Delivery history is kept.
+          </p>
+          <ConfirmButton
+            label="Archive endpoint"
+            prompt="Unsent deliveries will be cancelled."
+            confirmLabel="Archive"
+            onConfirm={archive}
+          />
+        </section>
+      )}
     </div>
   );
 }

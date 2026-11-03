@@ -1,0 +1,205 @@
+Metadata-Version: 2.4
+Name: hookflow
+Version: 0.1.0
+Summary: Official Python SDK for HookFlow: verify webhooks and call the HookFlow API.
+License: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Typing :: Typed
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Provides-Extra: test
+Requires-Dist: pytest>=7; extra == "test"
+
+# hookflow (Python)
+
+Official Python SDK for HookFlow. It verifies the webhooks HookFlow sends you and wraps the HookFlow API.
+Python 3.10+, no dependencies outside the standard library.
+
+```bash
+pip install hookflow                # once published
+pip install ./sdks/python           # from this repo
+```
+
+## Verify a webhook
+
+```python
+import hookflow
+
+event = hookflow.verify(raw_body, request_headers, "whsec_...")  # raises hookflow.WebhookVerificationError
+```
+
+- **Pass the raw request body**, the exact bytes you received. If you parse the JSON and serialize it again, the
+  bytes change and the signature check fails.
+- `headers` can be any mapping or list of `(name, value)` pairs. Header names are matched case-insensitively.
+- `secret` is the endpoint's full signing secret, `whsec_` prefix included.
+- Requests whose `HookFlow-Timestamp` is more than `tolerance_seconds` (default 300) from your clock are rejected.
+- While a secret rotation is in its grace period, `HookFlow-Signature` holds two signatures (`v1=<new>,v1=<old>`).
+  The request is accepted if either one matches, so you can switch to the new secret whenever you like.
+- On failure you get a `WebhookVerificationError` whose `.reason` is one of `missing_header`, `invalid_timestamp`,
+  `timestamp_out_of_tolerance`, `no_signatures`, `signature_mismatch` or `invalid_payload`. Return 400 and don't
+  process the request.
+- Delivery is at-least-once, so the same event can arrive twice. Use `event["id"]` (or the `HookFlow-Event-Id`
+  header) to skip duplicates.
+
+**Flask**
+
+```python
+import os
+
+from flask import Flask, request
+import hookflow
+
+app = Flask(__name__)
+
+@app.post("/webhooks/hookflow")
+def hookflow_webhook():
+    try:
+        event = hookflow.verify(request.get_data(), request.headers, os.environ["HOOKFLOW_WEBHOOK_SECRET"])
+    except hookflow.WebhookVerificationError as e:
+        return {"error": e.reason}, 400
+    handle(event["type"], event["data"])
+    return "", 204
+```
+
+**FastAPI**
+
+```python
+import os
+
+from fastapi import FastAPI, HTTPException, Request
+import hookflow
+
+app = FastAPI()
+
+@app.post("/webhooks/hookflow", status_code=204)
+async def hookflow_webhook(request: Request):
+    raw = await request.body()  # raw bytes: don't declare a pydantic body parameter here
+    try:
+        event = hookflow.verify(raw, request.headers, os.environ["HOOKFLOW_WEBHOOK_SECRET"])
+    except hookflow.WebhookVerificationError as e:
+        raise HTTPException(400, e.reason)
+    handle(event["type"], event["data"])
+```
+
+`hookflow.verify_signature(...)` runs the same checks but doesn't parse the body. `hookflow.sign(secret, timestamp,
+body)` produces a valid `HookFlow-Signature` value, which is handy for testing your own handler.
+
+## API client
+
+```python
+from hookflow import HookFlow
+
+hf = HookFlow("hf_ab12cd34_...", base_url="https://hookflow.example.com")
+# or set HOOKFLOW_API_KEY / HOOKFLOW_BASE_URL and call HookFlow()
+```
+
+Options: `timeout` (seconds per request, default 30) and `max_retries` (default 2; see [Retries](#retries)).
+
+### Send an event
+
+```python
+accepted = hf.events.send(
+    "order.created",
+    {"order_id": "ORD-101", "total": 42.5},
+    idempotency_key="order-ORD-101-created",  # optional, but makes retries safe
+)
+accepted["event_id"], accepted["delivery_count"]
+```
+
+### Read events and deliveries
+
+```python
+page = hf.events.list(event_type="order.created", limit=50)  # one page
+page.data, page.next_cursor, page.has_more
+
+for event in hf.events.list_all(created_after=datetime(2026, 10, 1, tzinfo=timezone.utc)):
+    ...  # every page, fetched as you iterate
+
+hf.events.get("evt_...")
+hf.events.deliveries("evt_...")                        # list of deliveries
+hf.events.replay("evt_...", endpoint_ids=["ep_..."])   # replay failed/cancelled deliveries of one event
+
+for d in hf.deliveries.list_all(status="failed", endpoint_id="ep_..."):
+    ...
+hf.deliveries.get("dlv_...")
+hf.deliveries.attempts("dlv_...")
+hf.deliveries.replays("dlv_...")
+hf.deliveries.replay("dlv_...")
+```
+
+`page.auto_paging_iter()` walks every page starting from that one.
+
+### Bulk replay
+
+```python
+preview = hf.deliveries.bulk_replay(endpoint_id="ep_...", statuses=["failed", "cancelled"], dry_run=True)
+print(preview["matched"], len(preview["replayed"]), preview["skipped"])
+
+while True:
+    result = hf.deliveries.bulk_replay(endpoint_id="ep_...", created_after="2026-10-30T00:00:00Z", limit=500)
+    if not result["has_more"]:
+        break
+```
+
+Fields you leave out take the server defaults: `statuses=["failed"]`, `limit=100` (maximum 500) and
+`dry_run=False`. Replayed deliveries leave the failed state, so calling again with the same filters picks up the
+next batch.
+
+### Endpoints
+
+```python
+ep = hf.endpoints.create("https://example.com/hooks", ["order.created"], description="Orders", max_attempts=5)
+secret = ep["signing_secret"]  # whsec_..., store it for verify()
+
+hf.endpoints.list() / hf.endpoints.list_all() / hf.endpoints.get("ep_...")
+hf.endpoints.update("ep_...", enabled=False, description=None)  # only the fields you pass are sent
+hf.endpoints.delete("ep_...")                                   # archives it
+hf.endpoints.secret("ep_...")
+hf.endpoints.rotate_secret("ep_...", grace_period_seconds=86400)
+```
+
+## Errors
+
+Every API error is raised as a subclass of `hookflow.HookFlowError`, with `.status`, `.code`, `.message` and
+`.details` copied from the API's `{"error": {...}}` body.
+
+| Status | Exception |
+| --- | --- |
+| 400 | `BadRequestError` |
+| 401 / 403 | `AuthenticationError` / `PermissionDeniedError` (a subclass of `AuthenticationError`) |
+| 404 | `NotFoundError` |
+| 409 | `ConflictError` (`idempotency_key_reused`, `not_replayable`, `nothing_to_replay`, ...) |
+| 413 | `PayloadTooLargeError` |
+| 422 | `ValidationError` (`.details` lists the field errors) |
+| 429 | `RateLimitError` (`.retry_after` in seconds; `.code` is `rate_limited` or `quota_exceeded`) |
+| 5xx | `InternalServerError` (`.retry_after` when the server sends one) |
+| no response | `APIConnectionError`, or `APITimeoutError` for a timeout (`.status` is `None`) |
+
+```python
+try:
+    hf.events.send("order.created", {"order_id": "ORD-101"}, idempotency_key="order-ORD-101-created")
+except hookflow.RateLimitError as e:
+    schedule_retry(after=e.retry_after)
+except hookflow.ValidationError as e:
+    log.error("bad event: %s", e.details)
+except hookflow.HookFlowError as e:
+    log.error("HookFlow error %s %s: %s", e.status, e.code, e.message)
+```
+
+## Retries
+
+The client only retries requests that are safe to repeat: `GET`, `DELETE`, and `POST /v1/events` **when you pass an
+`idempotency_key`**. Those are retried up to `max_retries` times (default 2) after connection errors, timeouts, 429s
+and 5xx responses. The client waits for the `Retry-After` time when the server sends one, or backs off exponentially
+(0.5s, 1s, ...) when it doesn't. If `Retry-After` is longer than 30 seconds (an exhausted daily quota, for example)
+the error is raised straight away. Every other request is sent once: sending an event without a key, replays, bulk
+replays, endpoint create and update. Set `max_retries=0` to turn retries off.
+
+## Development
+
+```bash
+cd sdks/python
+pip install pytest
+python -m pytest
+```

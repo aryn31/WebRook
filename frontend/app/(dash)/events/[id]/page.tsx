@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, errorMessage, type Delivery, type EventReplayed, type HookEvent, type ReplaySkipped } from "@/lib/api";
 import { INSPECTED_KEY, shortId } from "@/lib/format";
 import { DeliveryTable } from "@/components/DeliveryTable";
+import { useMe } from "@/components/MeContext";
 import { CopyButton, CountsPills, Empty, ErrorBox, Loading, PageHeader, Time } from "@/components/ui";
 
 const ACTIVE = new Set(["pending", "processing", "retrying"]);
@@ -48,7 +49,8 @@ function ReplayEventPanel({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<EventReplayed | null>(null);
   const [err, setErr] = useState<unknown>(null);
-  const replayable = deliveries.filter((d) => d.replayable);
+  const canReplay = useMe().can("deliveries:replay");
+  const replayable = canReplay ? deliveries.filter((d) => d.replayable) : [];
 
   async function go() {
     setBusy(true);

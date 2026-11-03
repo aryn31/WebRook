@@ -205,7 +205,7 @@ export function isFuture(iso: string | null | undefined): boolean {
 /** "the dashboard" / "API key key_…". */
 export function actorLabel(a: Actor): string {
   if (a.type === "api_key") return a.api_key_id ? `API key ${a.api_key_id}` : "an API key";
-  return "the dashboard";
+  return a.email ? `${a.email} in the dashboard` : "the dashboard";
 }
 
 export const AUDIT_LABEL: Record<string, string> = {
@@ -220,6 +220,13 @@ export const AUDIT_LABEL: Record<string, string> = {
   "endpoint.secret_rotated": "Signing secret rotated",
   "delivery.replayed": "Delivery replayed",
   "event.replayed": "Event replayed",
+  "deliveries.bulk_replayed": "Deliveries replayed in bulk",
+  "team.invite_created": "Member invited",
+  "team.invite_revoked": "Invite revoked",
+  "team.member_joined": "Member joined",
+  "team.member_role_changed": "Member role changed",
+  "team.member_removed": "Member removed",
+  "team.member_left": "Member left",
 };
 
 export function auditLabel(action: string): string {
@@ -253,6 +260,27 @@ export function auditSummary(log: AuditLog): string[] {
       break;
     case "delivery.replayed":
       return [typeof d.previous_status === "string" ? `Was ${d.previous_status}` : null].filter((x): x is string => !!x);
+    case "deliveries.bulk_replayed": {
+      const n = typeof d.count === "number" ? d.count : null;
+      const f = (d.filters ?? {}) as Record<string, unknown>;
+      const parts = [n != null ? `${n} deliver${n === 1 ? "y" : "ies"} replayed` : null];
+      if (typeof f.event_type === "string") parts.push(`Event type: ${f.event_type}`);
+      if (Array.isArray(f.statuses)) parts.push(`Status: ${f.statuses.join(", ")}`);
+      return parts.filter((x): x is string => !!x);
+    }
+    case "team.invite_created":
+    case "team.member_joined":
+      return [`${short(d.email)} as ${short(d.role)}`];
+    case "team.member_role_changed":
+      return [`${short(d.email)}: ${short(d.from)} → ${short(d.to)}`];
+    case "team.invite_revoked":
+    case "team.member_removed":
+    case "team.member_left":
+      return [short(d.email)];
+    case "api_key.created": {
+      const scopes = Array.isArray(d.scopes) ? (d.scopes as string[]) : null;
+      return [`${short(d.name)} (${short(d.prefix)})`, scopes ? `Scopes: ${scopes.join(", ")}` : "Full access"];
+    }
     case "event.replayed": {
       const n = Array.isArray(d.deliveries) ? d.deliveries.length : typeof d.deliveries === "number" ? d.deliveries : null;
       if (n != null) return [`${n} deliver${n === 1 ? "y" : "ies"} replayed`];

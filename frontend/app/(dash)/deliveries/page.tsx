@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api, type Delivery, type DeliveryStatus } from "@/lib/api";
 import { STATUS_LABEL } from "@/lib/format";
+import { BulkReplay } from "@/components/BulkReplay";
 import { DeliveryTable } from "@/components/DeliveryTable";
 import { Empty, ErrorBox, Loading, PageHeader } from "@/components/ui";
 
@@ -76,6 +77,16 @@ function DeliveriesView() {
           </button>
         ))}
       </div>
+
+      {tab === "failed" && items && items.length > 0 && (
+        <section className="card">
+          <BulkReplay filters={{}} label="Replay all failed deliveries" onDone={() => setTimeout(() => void load(tab, null), 800)} />
+          <p className="muted small mt">
+            Deliveries to disabled endpoints are left alone. To replay only some, use the button on an endpoint&apos;s
+            page, or call <code className="mono">POST /v1/deliveries/replay</code> with filters.
+          </p>
+        </section>
+      )}
 
       <section className="card card-flush">
         <ErrorBox error={err} onRetry={() => load(tab, null)} />

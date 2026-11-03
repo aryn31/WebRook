@@ -35,6 +35,7 @@ All settings are environment variables. Only `SECRET_ENCRYPTION_KEY` is required
 | `DAILY_EVENT_QUOTA` | `10000` | New events per account per UTC day (`0` = unlimited) |
 | `AUTH_RATE_LIMIT_PER_MINUTE` | `10` | Login and registration attempts per IP and per email |
 | `REPLAY_RATE_LIMIT_PER_MINUTE` | `60` | Deliveries replayed per account per minute |
+| `BULK_REPLAY_RATE_LIMIT_PER_MINUTE` | `10` | Bulk replay requests per account per minute (each replays up to 500) |
 | `ENDPOINT_MAX_CONCURRENCY` | `10` | Requests in flight to one endpoint, across all workers (`0` = no limit) |
 | `DELIVERY_MAX_ATTEMPTS` | `5` | Default for new endpoints (each endpoint can set 1–10) |
 | `EVENT_RETENTION_DAYS` | `30` | Delete events, deliveries and attempts after this (`0` = keep forever) |

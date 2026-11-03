@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     auth_rate_limit_per_minute: int = 10
     # Manual replays per account per minute. Each delivery replayed counts once.
     replay_rate_limit_per_minute: int = 60
+    # Bulk replay requests per account per minute (each can replay up to 500 deliveries).
+    bulk_replay_rate_limit_per_minute: int = 10
     # How long an Idempotency-Key on POST /v1/events is remembered.
     idempotency_key_ttl_hours: int = 24
     # Default ingestion limits per account. A user row can override either one; 0 means unlimited.

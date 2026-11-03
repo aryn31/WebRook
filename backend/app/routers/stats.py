@@ -4,7 +4,7 @@ from typing import Literal
 from fastapi import APIRouter
 from sqlalchemy import case, func, literal, select
 
-from app.deps import DB, CurrentPrincipal
+from app.deps import DB, EventsRead
 from app.models import Delivery, DeliveryAttempt, DeliveryStatus, Event
 from app.schemas import StatsOut
 
@@ -14,7 +14,7 @@ _RANGES = {"24h": (timedelta(hours=24), "hour"), "7d": (timedelta(days=7), "day"
 
 
 @router.get("", response_model=StatsOut)
-def stats(principal: CurrentPrincipal, db: DB, range: Literal["24h", "7d", "30d"] = "7d") -> dict:  # noqa: A002
+def stats(principal: EventsRead, db: DB, range: Literal["24h", "7d", "30d"] = "7d") -> dict:  # noqa: A002
     span, unit = _RANGES[range]
     now = datetime.now(UTC)
     start = now - span

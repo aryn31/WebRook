@@ -6,10 +6,53 @@
 
 export type User = { id: string; email: string; created_at: string };
 
+export type Role = "owner" | "admin" | "developer" | "viewer";
+export type MemberRole = Exclude<Role, "owner">;
+export const MEMBER_ROLES: MemberRole[] = ["admin", "developer", "viewer"];
+
+/** An account the user can work in: their own (personal) or a team they joined. Named after its owner. */
+export type Account = { id: string; owner_email: string; role: Role; personal: boolean };
+
+export type Permission =
+  | "events:write"
+  | "events:read"
+  | "deliveries:read"
+  | "deliveries:replay"
+  | "endpoints:read"
+  | "endpoints:write"
+  | "audit:read"
+  | "api_keys:manage"
+  | "team:manage";
+
+export type Me = { user: User; account: Account; permissions: Permission[]; accounts: Account[] };
+
+export type Member = { user_id: string; email: string; role: Role; joined_at: string };
+
+export type Invite = {
+  id: string;
+  email: string;
+  role: MemberRole;
+  created_at: string;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+};
+
+export type InviteCreated = { invite: Invite; token: string; accept_path: string };
+
+export type InvitePreview = { account_owner_email: string; email: string; role: MemberRole; expires_at: string };
+
+/** Scopes an API key can have. */
+export type ApiScope = Exclude<Permission, "api_keys:manage" | "team:manage">;
+
+export type ScopeInfo = { scope: ApiScope; description: string };
+
 export type ApiKey = {
   id: string;
   name: string;
   prefix: string;
+  scopes: ApiScope[];
+  created_by_user_id: string | null;
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
@@ -23,6 +66,8 @@ export type Endpoint = {
   event_types: string[];
   /** Attempts per delivery, including the first (1–10). Only affects new deliveries. */
   max_attempts: number;
+  /** Seconds before each retry; the last value repeats. null = default exponential backoff. */
+  retry_schedule: number[] | null;
   /** While in the future, the previous secret still signs alongside the new one. */
   previous_secret_expires_at: string | null;
   created_at: string;
@@ -49,6 +94,8 @@ export type EndpointWithHealth = Endpoint & { health: EndpointHealth };
 export const MAX_ATTEMPTS_MIN = 1;
 export const MAX_ATTEMPTS_MAX = 10;
 export const MAX_ATTEMPTS_DEFAULT = 5;
+export const RETRY_SCHEDULE_MAX_ITEMS = 9;
+export const RETRY_DELAY_MAX_SECONDS = 86400;
 
 export type SigningSecret = { signing_secret: string; previous_secret_expires_at: string | null };
 
@@ -122,7 +169,13 @@ export type Delivery = {
   updated_at: string;
 };
 
-export type Actor = { type: "session" | "api_key"; api_key_id: string | null };
+export type Actor = {
+  type: "session" | "api_key";
+  api_key_id: string | null;
+  /** The person: logged-in user, or the API key's creator. Null on older entries. */
+  user_id?: string | null;
+  email?: string | null;
+};
 
 export type Replay = {
   id: string;
@@ -140,6 +193,24 @@ export type ReplaySkipped = { delivery_id: string; reason: string };
 
 export type EventReplayed = { replayed: DeliveryReplayed[]; skipped: ReplaySkipped[] };
 
+export type BulkReplayFilters = {
+  endpoint_id?: string;
+  event_type?: string;
+  statuses?: ("failed" | "cancelled")[];
+  created_after?: string;
+  created_before?: string;
+  /** 1–500, default 100. */
+  limit?: number;
+};
+
+export type BulkReplayResult = {
+  matched: number;
+  replayed: string[];
+  skipped: ReplaySkipped[];
+  has_more: boolean;
+  dry_run: boolean;
+};
+
 export type AuditAction =
   | "auth.registered"
   | "auth.login"
@@ -151,7 +222,14 @@ export type AuditAction =
   | "endpoint.secret_viewed"
   | "endpoint.secret_rotated"
   | "delivery.replayed"
-  | "event.replayed";
+  | "event.replayed"
+  | "deliveries.bulk_replayed"
+  | "team.invite_created"
+  | "team.invite_revoked"
+  | "team.member_joined"
+  | "team.member_role_changed"
+  | "team.member_removed"
+  | "team.member_left";
 
 export const AUDIT_ACTIONS: AuditAction[] = [
   "auth.registered",
@@ -165,6 +243,13 @@ export const AUDIT_ACTIONS: AuditAction[] = [
   "endpoint.secret_rotated",
   "delivery.replayed",
   "event.replayed",
+  "deliveries.bulk_replayed",
+  "team.invite_created",
+  "team.invite_revoked",
+  "team.member_joined",
+  "team.member_role_changed",
+  "team.member_removed",
+  "team.member_left",
 ];
 
 export type AuditLog = {
@@ -286,6 +371,8 @@ export function errorMessage(err: unknown): string {
         return err.message || "This delivery can't be replayed right now.";
       case "nothing_to_replay":
         return err.message || "None of this event's deliveries can be replayed.";
+      case "forbidden":
+        return err.message || "Your role in this account doesn't allow this.";
       case "payload_too_large":
         return err.message || "Payload is too large (limit is 1 MiB).";
       default:
@@ -396,12 +483,29 @@ export const api = {
   login: (email: string, password: string) =>
     request<{ user: User }>("POST", "/auth/login", { body: { email, password } }),
   logout: () => request<void>("POST", "/auth/logout"),
-  me: () => request<{ user: User }>("GET", "/auth/me"),
+  me: () => request<Me>("GET", "/auth/me"),
+  switchAccount: (account_id: string) => request<Me>("POST", "/auth/switch-account", { body: { account_id } }),
+
+  // Team (session only)
+  listMembers: () => request<List<Member>>("GET", "/team/members"),
+  updateMember: (user_id: string, role: MemberRole) =>
+    request<Member>("PATCH", `/team/members/${encodeURIComponent(user_id)}`, { body: { role } }),
+  /** Also used to leave a team (pass your own user ID). */
+  removeMember: (user_id: string) => request<void>("DELETE", `/team/members/${encodeURIComponent(user_id)}`),
+  listInvites: () => request<List<Invite>>("GET", "/team/invites"),
+  createInvite: (email: string, role: MemberRole) =>
+    request<InviteCreated>("POST", "/team/invites", { body: { email, role } }),
+  revokeInvite: (id: string) => request<Invite>("DELETE", `/team/invites/${encodeURIComponent(id)}`),
+  previewInvite: (token: string) => request<InvitePreview>("GET", `/invites/${encodeURIComponent(token)}`),
+  acceptInvite: (token: string) =>
+    request<{ user: User }>("POST", `/invites/${encodeURIComponent(token)}/accept`),
 
   // API keys (session only)
   listApiKeys: () => request<List<ApiKey>>("GET", "/api-keys"),
-  createApiKey: (name: string) =>
-    request<{ api_key: ApiKey; key: string }>("POST", "/api-keys", { body: { name } }),
+  listScopes: () => request<List<ScopeInfo>>("GET", "/api-keys/scopes"),
+  /** scopes omitted = every scope your role allows. */
+  createApiKey: (name: string, scopes?: ApiScope[]) =>
+    request<{ api_key: ApiKey; key: string }>("POST", "/api-keys", { body: scopes ? { name, scopes } : { name } }),
   revokeApiKey: (id: string) =>
     request<{ api_key: ApiKey }>("DELETE", `/api-keys/${encodeURIComponent(id)}`),
 
@@ -414,6 +518,7 @@ export const api = {
     event_types: string[];
     enabled?: boolean;
     max_attempts?: number;
+    retry_schedule?: number[] | null;
   }) =>
     request<EndpointWithSecret>("POST", "/endpoints", { body }),
   getEndpoint: (id: string) => request<EndpointWithHealth>("GET", `/endpoints/${encodeURIComponent(id)}`),
@@ -425,6 +530,7 @@ export const api = {
       event_types: string[];
       enabled: boolean;
       max_attempts: number;
+      retry_schedule: number[] | null;
     }>,
   ) => request<Endpoint>("PATCH", `/endpoints/${encodeURIComponent(id)}`, { body }),
   archiveEndpoint: (id: string) => request<void>("DELETE", `/endpoints/${encodeURIComponent(id)}`),
@@ -473,6 +579,9 @@ export const api = {
     request<List<Attempt>>("GET", `/deliveries/${encodeURIComponent(id)}/attempts`),
   replayDelivery: (id: string) =>
     request<DeliveryReplayed>("POST", `/deliveries/${encodeURIComponent(id)}/replay`),
+  /** Replay failed/cancelled deliveries matching the filters, oldest first, up to `limit` per call. */
+  bulkReplay: (filters: BulkReplayFilters, dry_run = false) =>
+    request<BulkReplayResult>("POST", "/deliveries/replay", { body: { ...filters, dry_run } }),
   /** Oldest first. */
   getReplays: (id: string) => request<List<Replay>>("GET", `/deliveries/${encodeURIComponent(id)}/replays`),
 

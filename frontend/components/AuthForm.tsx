@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, describeDetails } from "@/lib/api";
 
 function safeNext(): string {
@@ -39,6 +39,14 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ text: string; details: string[]; code?: string } | null>(null);
+
+  // Keep ?next= when switching between log in and sign up (e.g. a new invitee coming from /invite/<token>).
+  // Read after mount so the server-rendered links match the first client render.
+  const [nextQs, setNextQs] = useState("");
+  useEffect(() => {
+    const next = safeNext();
+    if (next !== "/overview") setNextQs(`?next=${encodeURIComponent(next)}`);
+  }, []);
 
   const pwTooShort = mode === "register" && password.length > 0 && password.length < 10;
 
@@ -111,7 +119,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             )}
             {error.code === "email_taken" && (
               <div>
-                <Link href="/login">Go to log in →</Link>
+                <Link href={`/login${nextQs}`}>Go to log in →</Link>
               </div>
             )}
           </div>
@@ -123,11 +131,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       <div className="muted small center">
         {mode === "login" ? (
           <>
-            New to HookFlow? <Link href="/register">Create an account</Link>
+            New to HookFlow? <Link href={`/register${nextQs}`}>Create an account</Link>
           </>
         ) : (
           <>
-            Already have an account? <Link href="/login">Log in</Link>
+            Already have an account? <Link href={`/login${nextQs}`}>Log in</Link>
           </>
         )}
       </div>

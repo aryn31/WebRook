@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, type SystemHealth, type User } from "@/lib/api";
+import { api, errorMessage, type SystemHealth } from "@/lib/api";
 import { Brand } from "./Brand";
-import { IconAudit, IconDeliveries, IconEndpoints, IconEvents, IconHome, IconKey, IconLogout, IconOverview } from "./Icons";
+import { IconAudit, IconDeliveries, IconEndpoints, IconEvents, IconHome, IconKey, IconLogout, IconOverview, IconTeam } from "./Icons";
+import { accountLabel, ROLE_LABEL, useMe } from "./MeContext";
 
 const NAV = [
   { href: "/overview", label: "Overview", Icon: IconOverview },
@@ -13,6 +14,7 @@ const NAV = [
   { href: "/deliveries", label: "Deliveries", Icon: IconDeliveries },
   { href: "/endpoints", label: "Endpoints", Icon: IconEndpoints },
   { href: "/api-keys", label: "API keys", Icon: IconKey },
+  { href: "/team", label: "Team", Icon: IconTeam },
   { href: "/audit-log", label: "Audit log", Icon: IconAudit },
 ];
 
@@ -63,16 +65,68 @@ function SystemStatus() {
   );
 }
 
+/** Current account and role; a picker when the user belongs to more than one account. */
+function AccountSwitcher() {
+  const { me, switchAccount } = useMe();
+  const [switching, setSwitching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!me) return <div className="user-email"><span className="muted">…</span></div>;
+
+  if (me.accounts.length <= 1) {
+    return (
+      <div className="user-email" title={me.user.email}>
+        {me.user.email}
+      </div>
+    );
+  }
+
+  async function pick(id: string) {
+    if (id === me?.account.id) return;
+    setSwitching(true);
+    setError(null);
+    try {
+      await switchAccount(id); // reloads the page on success
+    } catch (err) {
+      setError(errorMessage(err));
+      setSwitching(false);
+    }
+  }
+
+  return (
+    <div className="acct-switch">
+      <label className="acct-label" htmlFor="acct-select">Account</label>
+      <div className="acct-select-wrap">
+        <select
+          id="acct-select"
+          className="acct-select"
+          value={me.account.id}
+          disabled={switching}
+          onChange={(e) => void pick(e.target.value)}
+          title={`${accountLabel(me.account)} · ${ROLE_LABEL[me.account.role]}`}
+        >
+          {me.accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {accountLabel(a)} · {ROLE_LABEL[a.role]}
+            </option>
+          ))}
+        </select>
+        <span className="acct-current" aria-hidden>
+          <span className="acct-name">{switching ? "Switching…" : accountLabel(me.account)}</span>
+          <span className="acct-role">{ROLE_LABEL[me.account.role]}</span>
+        </span>
+      </div>
+      <div className="user-email" title={me.user.email}>
+        {me.user.email}
+      </div>
+      {error && <div className="acct-error" role="alert">{error}</div>}
+    </div>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
-  const [user, setUser] = useState<User | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
-
-  useEffect(() => {
-    api.me().then((r) => setUser(r.user)).catch(() => {
-      /* 401 redirects to /login inside the client */
-    });
-  }, []);
 
   async function logout() {
     setLoggingOut(true);
@@ -103,9 +157,7 @@ export function Sidebar() {
           Back to website
         </Link>
         <SystemStatus />
-        <div className="user-email" title={user?.email}>
-          {user ? user.email : <span className="muted">…</span>}
-        </div>
+        <AccountSwitcher />
         <button type="button" className="btn btn-sm btn-ghost logout" onClick={logout} disabled={loggingOut}>
           <IconLogout size={15} /> {loggingOut ? "Logging out…" : "Log out"}
         </button>

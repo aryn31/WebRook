@@ -6,7 +6,7 @@ from sqlalchemy import case, func, literal, select, update
 
 from app import audit
 from app.config import get_settings
-from app.deps import DB, CurrentPrincipal
+from app.deps import DB, CurrentPrincipal, EndpointsRead, EndpointsWrite
 from app.errors import ApiError, not_found
 from app.models import Delivery, DeliveryAttempt, DeliveryStatus, Endpoint, EndpointSubscription
 from app.pagination import Cursor, Limit, paginate
@@ -102,7 +102,7 @@ def _health(db: DB, endpoint_ids: list[str]) -> dict[str, dict]:
 
 
 @router.get("", response_model=Page[EndpointWithHealth])
-def list_endpoints(principal: CurrentPrincipal, db: DB, limit: Limit = 25, cursor: Cursor = None) -> dict:
+def list_endpoints(principal: EndpointsRead, db: DB, limit: Limit = 25, cursor: Cursor = None) -> dict:
     stmt = select(Endpoint).where(Endpoint.user_id == principal.user.id, Endpoint.archived_at.is_(None))
     data, next_cursor = paginate(db, stmt, Endpoint.id, limit, cursor)
     health = _health(db, [e.id for e in data])
@@ -111,7 +111,7 @@ def list_endpoints(principal: CurrentPrincipal, db: DB, limit: Limit = 25, curso
 
 
 @router.post("", status_code=201, response_model=EndpointCreated)
-def create_endpoint(body: EndpointIn, principal: CurrentPrincipal, db: DB) -> dict:
+def create_endpoint(body: EndpointIn, principal: EndpointsWrite, db: DB) -> dict:
     url = _check_url(body.url)
     count = db.scalar(
         select(func.count()).where(Endpoint.user_id == principal.user.id, Endpoint.archived_at.is_(None))
@@ -127,26 +127,28 @@ def create_endpoint(body: EndpointIn, principal: CurrentPrincipal, db: DB) -> di
         description=body.description,
         enabled=body.enabled,
         max_attempts=body.max_attempts or get_settings().delivery_max_attempts,
+        retry_schedule=body.retry_schedule,
         secret_encrypted=encrypt_secret(secret),
         subscriptions=[EndpointSubscription(event_type=t) for t in body.event_types],
     )
     db.add(endpoint)
     db.flush()
     audit.record(db, principal, "endpoint.created", "endpoint", endpoint.id,
-                 {"url": url, "event_types": body.event_types, "max_attempts": endpoint.max_attempts})
+                 {"url": url, "event_types": body.event_types, "max_attempts": endpoint.max_attempts,
+                  "retry_schedule": body.retry_schedule})
     db.commit()
     db.refresh(endpoint)
     return {**EndpointOut.model_validate(endpoint).model_dump(), "signing_secret": secret}
 
 
 @router.get("/{endpoint_id}", response_model=EndpointWithHealth)
-def get_endpoint(endpoint_id: str, principal: CurrentPrincipal, db: DB) -> dict:
+def get_endpoint(endpoint_id: str, principal: EndpointsRead, db: DB) -> dict:
     endpoint = _get_owned(db, principal, endpoint_id)
     return {**EndpointOut.model_validate(endpoint).model_dump(), "health": _health(db, [endpoint.id])[endpoint.id]}
 
 
 @router.patch("/{endpoint_id}", response_model=EndpointOut)
-def update_endpoint(endpoint_id: str, body: EndpointPatch, principal: CurrentPrincipal, db: DB) -> Endpoint:
+def update_endpoint(endpoint_id: str, body: EndpointPatch, principal: EndpointsWrite, db: DB) -> Endpoint:
     endpoint = _get_owned(db, principal, endpoint_id)
     fields = body.model_fields_set
     changes: dict = {}
@@ -165,6 +167,10 @@ def update_endpoint(endpoint_id: str, body: EndpointPatch, principal: CurrentPri
         # Applies to deliveries created from now on; existing ones keep the limit they started with.
         changes["max_attempts"] = {"from": endpoint.max_attempts, "to": body.max_attempts}
         endpoint.max_attempts = body.max_attempts
+    if "retry_schedule" in fields and body.retry_schedule != endpoint.retry_schedule:
+        # Takes effect from the next retry, including deliveries already retrying.
+        changes["retry_schedule"] = {"from": endpoint.retry_schedule, "to": body.retry_schedule}
+        endpoint.retry_schedule = body.retry_schedule
     if "enabled" in fields and body.enabled is not None and body.enabled != endpoint.enabled:
         if not body.enabled:
             _cancel_unsent(db, endpoint.id, "Cancelled because the endpoint was disabled.")
@@ -179,7 +185,7 @@ def update_endpoint(endpoint_id: str, body: EndpointPatch, principal: CurrentPri
 
 
 @router.delete("/{endpoint_id}", status_code=204)
-def archive_endpoint(endpoint_id: str, principal: CurrentPrincipal, db: DB) -> Response:
+def archive_endpoint(endpoint_id: str, principal: EndpointsWrite, db: DB) -> Response:
     endpoint = _get_owned(db, principal, endpoint_id)
     endpoint.archived_at = datetime.now(UTC)
     endpoint.enabled = False
@@ -198,7 +204,7 @@ def _secret_out(endpoint: Endpoint) -> dict:
 
 
 @router.get("/{endpoint_id}/secret", response_model=SigningSecret)
-def get_secret(endpoint_id: str, principal: CurrentPrincipal, db: DB) -> dict:
+def get_secret(endpoint_id: str, principal: EndpointsWrite, db: DB) -> dict:
     endpoint = _get_owned(db, principal, endpoint_id)
     audit.record(db, principal, "endpoint.secret_viewed", "endpoint", endpoint.id)
     db.commit()
@@ -208,7 +214,7 @@ def get_secret(endpoint_id: str, principal: CurrentPrincipal, db: DB) -> dict:
 @router.post("/{endpoint_id}/rotate-secret", response_model=SigningSecret)
 def rotate_secret(
     endpoint_id: str,
-    principal: CurrentPrincipal,
+    principal: EndpointsWrite,
     db: DB,
     body: Annotated[RotateSecretIn | None, Body()] = None,
 ) -> dict:

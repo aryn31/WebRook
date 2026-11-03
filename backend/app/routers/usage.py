@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from sqlalchemy import func, select
 
 from app import ratelimit
-from app.deps import DB, CurrentPrincipal
+from app.deps import DB, EventsRead
 from app.models import Event
 from app.routers.events import DAY, _limits
 from app.schemas import UsageOut
@@ -25,7 +25,7 @@ def _window(limit: int, used: int, seconds: int) -> dict:
 
 
 @router.get("", response_model=UsageOut)
-def usage(principal: CurrentPrincipal, db: DB) -> dict:
+def usage(principal: EventsRead, db: DB) -> dict:
     """Where the account stands against its ingestion limits. Reading this doesn't count toward them."""
     user = principal.user
     rate_limit, quota = _limits(user)

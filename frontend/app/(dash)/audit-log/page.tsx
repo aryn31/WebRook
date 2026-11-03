@@ -8,6 +8,7 @@ import { auditLabel, auditSummary, shortId } from "@/lib/format";
 import { Empty, ErrorBox, Loading, PageHeader, Time } from "@/components/ui";
 
 function Actor({ log }: { log: AuditLog }) {
+  const who = log.actor.email ? <div className="muted small">{log.actor.email}</div> : null;
   if (log.actor.type === "api_key") {
     return (
       <span>
@@ -17,10 +18,16 @@ function Actor({ log }: { log: AuditLog }) {
             {shortId(log.actor.api_key_id, 16)}
           </Link>
         ) : null}
+        {who}
       </span>
     );
   }
-  return <span>Dashboard</span>;
+  return (
+    <span>
+      Dashboard
+      {who}
+    </span>
+  );
 }
 
 function str(v: unknown): string | null {

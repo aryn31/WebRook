@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, type EventAccepted, type EventSummary } from "@/lib/api";
 import { validateEventType } from "@/components/EventTypesInput";
+import { useMe } from "@/components/MeContext";
 import { CountsPills, Empty, ErrorBox, Loading, PageHeader, Time } from "@/components/ui";
 
 type Filters = { event_type: string; after: string; before: string };
@@ -119,6 +120,7 @@ export default function EventsPage() {
   const [err, setErr] = useState<unknown>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [showSend, setShowSend] = useState(false);
+  const canSend = useMe().can("events:write");
 
   const load = useCallback(
     async (after: string | null) => {
@@ -156,9 +158,11 @@ export default function EventsPage() {
         title="Events"
         sub="Everything your application sent to HookFlow, newest first."
         actions={
-          <button type="button" className={`btn${showSend ? "" : " btn-primary"}`} onClick={() => setShowSend((v) => !v)}>
-            {showSend ? "Close" : "Send event"}
-          </button>
+          canSend && (
+            <button type="button" className={`btn${showSend ? "" : " btn-primary"}`} onClick={() => setShowSend((v) => !v)}>
+              {showSend ? "Close" : "Send event"}
+            </button>
+          )
         }
       />
 
@@ -224,10 +228,16 @@ export default function EventsPage() {
             <Empty title="No events match these filters">Try a different event type or date range.</Empty>
           ) : (
             <Empty title="No events yet">
-              Send one with your API key, or{" "}
-              <button type="button" className="btn btn-sm btn-primary" onClick={() => setShowSend(true)}>
-                send a test event
-              </button>
+              {canSend ? (
+                <>
+                  Send one with your API key, or{" "}
+                  <button type="button" className="btn btn-sm btn-primary" onClick={() => setShowSend(true)}>
+                    send a test event
+                  </button>
+                </>
+              ) : (
+                "Events sent to this account will show up here."
+              )}
             </Empty>
           ))}
         {items && items.length > 0 && (
