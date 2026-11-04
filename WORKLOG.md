@@ -20,6 +20,17 @@ Each entry covers: what was built or changed, decisions made, how it was checked
   alerts, and the custom-schedule, pattern and launch decisions recorded. `docs/HookFlow-PRD-v1.3.pdf` (33 pages)
   replaces the v1.2 PDF, built from the Markdown with headless Chrome as before.
 
+- **Security page** (dashboard → Security): change your password, see where you're logged in (device, IP, last
+  active), sign out one session or all others. Changing the password signs out every other session and gives this
+  browser a new token. New routes: `POST /v1/auth/password`, `GET /v1/auth/sessions`,
+  `DELETE /v1/auth/sessions/{id}`, `POST /v1/auth/sessions/sign-out-others`. Migration `0005` adds `ip_address`,
+  `user_agent` and `last_seen_at` to sessions (`last_seen_at` is written at most every 5 minutes). Security events
+  go in the person's own audit log, even while working in a team.
+- Checked: 11 new tests in `tests/test_account_security.py`; all 174 backend tests pass; migration up and down;
+  frontend typecheck; end to end through the dashboard proxy with two browsers (the other one was signed out after
+  the password change); screenshot of the page.
+- Offered but not chosen yet: two-factor login, blocking leaked passwords, longer lockouts after repeated failures.
+
 ### Left to do
 - Check the free Postgres expiry date on Render, and that the audit log shows real IPs.
 - Email alerts when an endpoint keeps failing (the last Milestone 4 item).

@@ -988,3 +988,8 @@ tr.row-click:has(+ .row-explain) td { border-bottom: 0; padding-bottom: 4px; }
 .invite-facts dt { color: var(--muted); flex-shrink: 0; }
 .invite-facts dd { margin: 0; text-align: right; word-break: break-all; }
 @media (max-width: 520px) { .invite-card { padding: 20px; } }
+
+/* Security */
+.security-form { max-width: 420px; }
+.security-intro { margin: 0 0 12px; }
+.security-this { margin-left: 8px; }

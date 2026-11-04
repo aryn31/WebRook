@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, errorMessage, type SystemHealth } from "@/lib/api";
 import { Brand } from "./Brand";
-import { IconAudit, IconDeliveries, IconEndpoints, IconEvents, IconHome, IconKey, IconLogout, IconOverview, IconTeam } from "./Icons";
+import { IconAudit, IconDeliveries, IconEndpoints, IconEvents, IconHome, IconKey, IconLogout, IconOverview, IconShield, IconTeam } from "./Icons";
 import { accountLabel, ROLE_LABEL, useMe } from "./MeContext";
 
 const NAV = [
@@ -16,6 +16,7 @@ const NAV = [
   { href: "/api-keys", label: "API keys", Icon: IconKey },
   { href: "/team", label: "Team", Icon: IconTeam },
   { href: "/audit-log", label: "Audit log", Icon: IconAudit },
+  { href: "/security", label: "Security", Icon: IconShield },
 ];
 
 const STATUS_POLL_MS = 60_000;

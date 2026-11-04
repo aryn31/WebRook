@@ -97,6 +97,29 @@ class SwitchAccountIn(BaseModel):
     account_id: str = Field(max_length=32)
 
 
+class PasswordChangeIn(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=10, max_length=256)
+
+
+class PasswordChangeOut(BaseModel):
+    signed_out_sessions: int
+
+
+class SessionOut(BaseModel):
+    id: str
+    created_at: datetime
+    last_seen_at: datetime | None
+    expires_at: datetime
+    ip_address: str | None
+    user_agent: str | None
+    current: bool
+
+
+class SignedOutOut(BaseModel):
+    signed_out_sessions: int
+
+
 # --- Team --------------------------------------------------------------------
 
 MemberRole = Literal["admin", "developer", "viewer"]

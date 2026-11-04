@@ -57,6 +57,10 @@ class UserSession(Base):
     created_at: Mapped[datetime] = _now_col()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Shown on the Security page so people can recognise their devices. Updated at most every few minutes.
+    ip_address: Mapped[str | None] = mapped_column(String(64))
+    user_agent: Mapped[str | None] = mapped_column(String(512))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped[User] = relationship(lazy="joined", foreign_keys=[user_id])
 

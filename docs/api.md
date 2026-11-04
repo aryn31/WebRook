@@ -90,6 +90,27 @@ type Me = {
 Body: `{ "account_id": "usr_..." }` → `200 Me`. Work in another account (your own, or a team you belong to). Applies
 to this session only. `404` if you're not a member.
 
+### Password and sessions
+
+These act on the logged-in person, whichever account they're working in, and are recorded in that person's own
+audit log.
+
+### `POST /v1/auth/password`
+Body: `{ "current_password", "new_password" }` (new: 10–256 characters) → `200 { "signed_out_sessions": n }`.
+Every other session is signed out, and this session gets a new cookie, so a copied old token stops working.
+`400 invalid_current_password` or `400 same_password`. Rate limited like login.
+
+### `GET /v1/auth/sessions` → `{ "data": Session[] }`
+Sessions that haven't expired or been signed out, most recently used first:
+`{ "id", "created_at", "last_seen_at", "expires_at", "ip_address", "user_agent", "current" }`. `last_seen_at` and
+`ip_address` are updated at most every 5 minutes.
+
+### `DELETE /v1/auth/sessions/{id}` → `204`
+Sign out one of your sessions. Signing out the current one also clears the cookie. `404` if it isn't yours or is
+already signed out.
+
+### `POST /v1/auth/sessions/sign-out-others` → `200 { "signed_out_sessions": n }`
+
 ## Team (session only)
 
 An account is named after its owner. The owner can invite people to work in it. Each member has a role:
@@ -406,6 +427,7 @@ type AuditLog = {
 | Action | When |
 | --- | --- |
 | `auth.registered`, `auth.login` | Account created, signed in |
+| `auth.password_changed`, `auth.session_signed_out`, `auth.sessions_signed_out` | Password changed, sessions signed out from the Security page |
 | `api_key.created`, `api_key.revoked` | API key changes |
 | `endpoint.created`, `endpoint.archived` | |
 | `endpoint.updated` | `details.changes` = `{ field: { from, to } }` |

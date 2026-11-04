@@ -28,6 +28,17 @@ export type Me = { user: User; account: Account; permissions: Permission[]; acco
 
 export type Member = { user_id: string; email: string; role: Role; joined_at: string };
 
+/** A place you're logged in (one browser session). */
+export type LoginSession = {
+  id: string;
+  created_at: string;
+  last_seen_at: string | null;
+  expires_at: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  current: boolean;
+};
+
 export type Invite = {
   id: string;
   email: string;
@@ -485,6 +496,13 @@ export const api = {
   logout: () => request<void>("POST", "/auth/logout"),
   me: () => request<Me>("GET", "/auth/me"),
   switchAccount: (account_id: string) => request<Me>("POST", "/auth/switch-account", { body: { account_id } }),
+
+  // Your security (session only)
+  changePassword: (current_password: string, new_password: string) =>
+    request<{ signed_out_sessions: number }>("POST", "/auth/password", { body: { current_password, new_password } }),
+  listSessions: () => request<List<LoginSession>>("GET", "/auth/sessions"),
+  signOutSession: (id: string) => request<void>("DELETE", `/auth/sessions/${encodeURIComponent(id)}`),
+  signOutOtherSessions: () => request<{ signed_out_sessions: number }>("POST", "/auth/sessions/sign-out-others"),
 
   // Team (session only)
   listMembers: () => request<List<Member>>("GET", "/team/members"),

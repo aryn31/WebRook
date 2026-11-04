@@ -89,10 +89,24 @@ def _from_session(db: Session, token: str) -> Principal | None:
     return Principal(user=account, via="session", session=session, actor=me, role=role)
 
 
+SESSION_SEEN_INTERVAL = timedelta(minutes=5)
+
+
 def get_principal(request: Request, db: DB) -> Principal:
     principal = _authenticate(request, db)
     principal.ip = client_ip(request)
+    if principal.session is not None:
+        _touch_session(db, principal.session, principal.ip)
     return principal
+
+
+def _touch_session(db: Session, session: UserSession, ip: str) -> None:
+    """Record when and from where a session was last used, at most every few minutes, for the Security page."""
+    now = datetime.now(UTC)
+    if session.last_seen_at is not None and now - session.last_seen_at < SESSION_SEEN_INTERVAL:
+        return
+    db.execute(update(UserSession).where(UserSession.id == session.id).values(last_seen_at=now, ip_address=ip))
+    db.commit()
 
 
 def _authenticate(request: Request, db: Session) -> Principal:

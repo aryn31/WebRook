@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Request, Response
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app import audit, ratelimit
@@ -11,7 +11,20 @@ from app.deps import DB, Principal, SessionPrincipal, member_role
 from app.errors import ApiError
 from app.models import AccountMember, User, UserSession
 from app.permissions import API_SCOPES, SESSION_ONLY
-from app.schemas import AccountOut, Credentials, MeOut, RegisterIn, SwitchAccountIn, UserEnvelope, UserOut
+from app.schemas import (
+    AccountOut,
+    Credentials,
+    ListOf,
+    MeOut,
+    PasswordChangeIn,
+    PasswordChangeOut,
+    RegisterIn,
+    SessionOut,
+    SignedOutOut,
+    SwitchAccountIn,
+    UserEnvelope,
+    UserOut,
+)
 from app.security import hash_password, new_session_token, sha256_hex, verify_password
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
@@ -23,18 +36,29 @@ def _limit(request: Request, action: str, email: str) -> None:
     ratelimit.enforce(f"auth:{action}:email:{sha256_hex(email.lower())}", limit)
 
 
-def _start_session(db: DB, request: Request, response: Response, user: User, action: str) -> None:
-    s = get_settings()
+USER_AGENT_MAX = 512
+
+
+def _new_session(db: DB, request: Request, user: User, account_id: str | None = None) -> str:
+    """Add a session for ``user`` and return its token (only the hash is stored)."""
     token = new_session_token()
+    now = datetime.now(UTC)
     db.add(
         UserSession(
             user_id=user.id,
+            account_id=account_id,
             token_hash=sha256_hex(token),
-            expires_at=datetime.now(UTC) + timedelta(hours=s.session_ttl_hours),
+            expires_at=now + timedelta(hours=get_settings().session_ttl_hours),
+            ip_address=client_ip(request),
+            user_agent=(request.headers.get("user-agent") or "")[:USER_AGENT_MAX] or None,
+            last_seen_at=now,
         )
     )
-    audit.record(db, Principal(user=user, via="session", ip=client_ip(request)), action, "user", user.id)
-    db.commit()
+    return token
+
+
+def _set_cookie(response: Response, token: str) -> None:
+    s = get_settings()
     response.set_cookie(
         s.session_cookie_name,
         token,
@@ -44,6 +68,13 @@ def _start_session(db: DB, request: Request, response: Response, user: User, act
         samesite="lax",
         path="/",
     )
+
+
+def _start_session(db: DB, request: Request, response: Response, user: User, action: str) -> None:
+    token = _new_session(db, request, user)
+    audit.record(db, Principal(user=user, via="session", ip=client_ip(request)), action, "user", user.id)
+    db.commit()
+    _set_cookie(response, token)
 
 
 @router.post("/register", status_code=201, response_model=UserEnvelope)
@@ -125,3 +156,111 @@ def switch_account(body: SwitchAccountIn, principal: SessionPrincipal, db: DB) -
     db.commit()
     account = db.get(User, body.account_id)
     return _me(db, Principal(user=account, via="session", session=session, actor=me, role=role, ip=principal.ip))
+
+
+# --- Your security: password and sessions --------------------------------------
+# These always act on the logged-in person, whichever account they're working in, and are recorded in their own
+# account's audit log.
+
+def _personal(principal: Principal) -> Principal:
+    me = principal.actor
+    return Principal(user=me, via="session", session=principal.session, actor=me, ip=principal.ip)
+
+
+def _active_sessions(user_id: str):
+    return (
+        select(UserSession)
+        .where(UserSession.user_id == user_id)
+        .where(UserSession.revoked_at.is_(None))
+        .where(UserSession.expires_at > datetime.now(UTC))
+    )
+
+
+def _sign_out_others(db: DB, principal: Principal, keep: str) -> int:
+    q = (
+        update(UserSession)
+        .where(UserSession.user_id == principal.actor.id)
+        .where(UserSession.revoked_at.is_(None))
+        .where(UserSession.expires_at > datetime.now(UTC))
+        .where(UserSession.id != keep)
+        .values(revoked_at=datetime.now(UTC))
+    )
+    return db.execute(q).rowcount or 0
+
+
+@router.post("/password", response_model=PasswordChangeOut)
+def change_password(
+    body: PasswordChangeIn, principal: SessionPrincipal, request: Request, response: Response, db: DB
+) -> dict:
+    """Change your password. Every other session is signed out, and this one gets a fresh token."""
+    me = db.get(User, principal.actor.id)
+    ratelimit.enforce(f"auth:password:user:{me.id}", get_settings().auth_rate_limit_per_minute)
+    if not verify_password(me.password_hash, body.current_password):
+        raise ApiError(400, "Your current password is incorrect.", code="invalid_current_password",
+                       details={"field": "current_password"})
+    if body.new_password == body.current_password:
+        raise ApiError(400, "Choose a password different from your current one.", code="same_password",
+                       details={"field": "new_password"})
+    me.password_hash = hash_password(body.new_password)
+
+    # Replace this session too, so a token copied before the change stops working.
+    current = db.get(UserSession, principal.session.id)
+    signed_out = _sign_out_others(db, principal, keep=current.id)
+    current.revoked_at = datetime.now(UTC)
+    token = _new_session(db, request, me, account_id=current.account_id)
+    audit.record(db, _personal(principal), "auth.password_changed", "user", me.id,
+                 {"signed_out_sessions": signed_out})
+    db.commit()
+    _set_cookie(response, token)
+    return {"signed_out_sessions": signed_out}
+
+
+@router.get("/sessions", response_model=ListOf[SessionOut])
+def list_sessions(principal: SessionPrincipal, db: DB) -> dict:
+    """Where you're logged in: every session that hasn't expired or been signed out, most recently used first."""
+    rows = db.scalars(
+        _active_sessions(principal.actor.id).order_by(
+            func.coalesce(UserSession.last_seen_at, UserSession.created_at).desc()
+        )
+    ).all()
+    current = principal.session.id
+    return {
+        "data": [
+            SessionOut(
+                id=r.id,
+                created_at=r.created_at,
+                last_seen_at=r.last_seen_at or r.created_at,
+                expires_at=r.expires_at,
+                ip_address=r.ip_address,
+                user_agent=r.user_agent,
+                current=r.id == current,
+            )
+            for r in rows
+        ]
+    }
+
+
+@router.post("/sessions/sign-out-others", response_model=SignedOutOut)
+def sign_out_others(principal: SessionPrincipal, db: DB) -> dict:
+    """Sign out every session except this one."""
+    n = _sign_out_others(db, principal, keep=principal.session.id)
+    audit.record(db, _personal(principal), "auth.sessions_signed_out", "user", principal.actor.id,
+                 {"signed_out_sessions": n})
+    db.commit()
+    return {"signed_out_sessions": n}
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+def sign_out_session(session_id: str, principal: SessionPrincipal, db: DB) -> Response:
+    """Sign out one of your sessions. Signing out this session is the same as logging out."""
+    session = db.scalar(_active_sessions(principal.actor.id).where(UserSession.id == session_id))
+    if session is None:
+        raise ApiError(404, "Session not found, or already signed out.", code="not_found")
+    session.revoked_at = datetime.now(UTC)
+    audit.record(db, _personal(principal), "auth.session_signed_out", "session", session.id)
+    db.commit()
+    out = Response(status_code=204)
+    if session.id == principal.session.id:
+        s = get_settings()
+        out.delete_cookie(s.session_cookie_name, path="/", httponly=True, secure=s.cookie_secure, samesite="lax")
+    return out

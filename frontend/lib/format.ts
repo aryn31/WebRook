@@ -211,6 +211,9 @@ export function actorLabel(a: Actor): string {
 export const AUDIT_LABEL: Record<string, string> = {
   "auth.registered": "Account created",
   "auth.login": "Logged in",
+  "auth.password_changed": "Password changed",
+  "auth.session_signed_out": "Signed out a session",
+  "auth.sessions_signed_out": "Signed out other sessions",
   "api_key.created": "API key created",
   "api_key.revoked": "API key revoked",
   "endpoint.created": "Endpoint created",
@@ -258,6 +261,13 @@ export function auditSummary(log: AuditLog): string[] {
         return [d.grace_period_seconds > 0 ? `Old secret kept for ${formatSeconds(d.grace_period_seconds)}` : "Old secret revoked immediately"];
       }
       break;
+    case "auth.password_changed":
+    case "auth.sessions_signed_out":
+      if (typeof d.signed_out_sessions === "number") {
+        const n = d.signed_out_sessions;
+        return [n === 0 ? "No other sessions were open" : `${n} other session${n === 1 ? "" : "s"} signed out`];
+      }
+      break;
     case "delivery.replayed":
       return [typeof d.previous_status === "string" ? `Was ${d.previous_status}` : null].filter((x): x is string => !!x);
     case "deliveries.bulk_replayed": {
@@ -290,4 +300,28 @@ export function auditSummary(log: AuditLog): string[] {
   return Object.entries(d)
     .filter(([k]) => !k.endsWith("_id"))
     .map(([k, v]) => `${k}: ${short(v)}`);
+}
+
+/** "Chrome on macOS" from a browser's user agent. Rough on purpose: it only has to help people recognise a device. */
+export function describeDevice(ua: string | null | undefined): string {
+  if (!ua) return "Unknown device";
+  const browser =
+    /Edg\//.test(ua) ? "Edge"
+    : /OPR\/|Opera/.test(ua) ? "Opera"
+    : /Firefox\//.test(ua) ? "Firefox"
+    : /Chrome\/|CriOS\//.test(ua) ? "Chrome"
+    : /Safari\//.test(ua) ? "Safari"
+    : /^curl\//.test(ua) ? "curl"
+    : null;
+  const os =
+    /iPhone/.test(ua) ? "iPhone"
+    : /iPad/.test(ua) ? "iPad"
+    : /Android/.test(ua) ? "Android"
+    : /Windows/.test(ua) ? "Windows"
+    : /Mac OS X|Macintosh/.test(ua) ? "macOS"
+    : /CrOS/.test(ua) ? "ChromeOS"
+    : /Linux/.test(ua) ? "Linux"
+    : null;
+  if (browser && os) return `${browser} on ${os}`;
+  return browser ?? os ?? "Unknown device";
 }
