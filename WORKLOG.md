@@ -6,6 +6,23 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-04 — Milestone 4 deployed
+
+### Done
+- Ran the full stack locally with Docker Compose. Migration 0004 applied to the local database, and `/health/ready`
+  reported the database, Redis and worker all OK.
+- The user committed Milestone 4 (`90eef35`) and deployed it to Render and Vercel. Nothing needs to run locally
+  for production.
+- Added `.github/workflows/keep-awake.yml`: pings `/health/live` every 5 minutes so Render's free plan doesn't
+  sleep. It does nothing until the repository variable `HOOKFLOW_API_URL` is set in GitHub.
+
+### Left to do
+- Set `HOOKFLOW_API_URL` in GitHub, then check the free Postgres expiry date on Render.
+- Check `/health/ready` on the live API. Set `TRUSTED_PROXY_COUNT=2` and `METRICS_TOKEN` on Render.
+- Email alerts when an endpoint keeps failing (the last Milestone 4 item).
+- Optional: publish the SDKs to PyPI and npm, rebuild the PRD PDF, and update the resume text with the Milestone 4
+  features.
+
 ## 2026-11-02 — Milestone 4 (Product Improvements)
 
 **Outcome:** Everything in Milestone 4 except email alerts: team accounts, scoped API keys, pattern subscriptions,

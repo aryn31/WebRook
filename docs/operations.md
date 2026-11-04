@@ -19,6 +19,11 @@ recovery, cleanup and retention) and the monitor (every minute: alerts).
 or the API stops, the script exits so the host restarts the container. Run exactly one copy, because it includes the
 scheduler.
 
+Render's free plan sleeps after about 15 minutes without traffic, and the worker sleeps with it, so retries wait
+until something wakes it. [`.github/workflows/keep-awake.yml`](../.github/workflows/keep-awake.yml) pings
+`/health/live` every 5 minutes to prevent this. Turn it on by setting the repository variable `HOOKFLOW_API_URL`
+in GitHub (Settings → Secrets and variables → Actions → Variables).
+
 ## Settings
 
 All settings are environment variables. Only `SECRET_ENCRYPTION_KEY` is required.
