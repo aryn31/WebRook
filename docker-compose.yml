@@ -12,6 +12,13 @@ x-backend: &backend
     SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?Set SECRET_ENCRYPTION_KEY in .env (see .env.example)}
     # Local dev only: lets HookFlow deliver to the test receiver on the Docker network.
     BLOCK_PRIVATE_DESTINATIONS: "false"
+    # Verification emails. Without these in .env, codes are only printed in the API logs.
+    MAIL_BACKEND: ${MAIL_BACKEND:-console}
+    MAIL_FROM_EMAIL: ${MAIL_FROM_EMAIL:-no-reply@hookflow.local}
+    APP_URL: ${APP_URL:-http://localhost:3000}
+    GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+    GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+    GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN:-}
   depends_on:
     postgres:
       condition: service_healthy

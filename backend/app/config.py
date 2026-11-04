@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     mail_backend: Literal["console", "smtp", "gmail", "brevo"] = "console"
     mail_from_email: str = "no-reply@hookflow.local"
     mail_from_name: str = "HookFlow"
+    # The dashboard's public address, for links in emails.
+    app_url: str = "http://localhost:3000"
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""

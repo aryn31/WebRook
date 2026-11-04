@@ -51,6 +51,7 @@ All settings are environment variables. Only `SECRET_ENCRYPTION_KEY` is required
 | `MAIL_BACKEND` | `console` | `console` (log emails, for development), `gmail`, `smtp` or `brevo`. See [Email](#email) |
 | `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | — | For `MAIL_BACKEND=gmail`; from `backend/scripts/gmail_token.py` |
 | `MAIL_FROM_EMAIL` / `MAIL_FROM_NAME` | `no-reply@hookflow.local` / `HookFlow` | Sender of verification emails |
+| `APP_URL` | `http://localhost:3000` | The dashboard's public address, used for links in emails |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` | — / `587` | For `MAIL_BACKEND=smtp` (STARTTLS) |
 | `BREVO_API_KEY` | — | For `MAIL_BACKEND=brevo` |
 | `EMAIL_CODE_TTL_MINUTES` | `15` | How long a verification code works |

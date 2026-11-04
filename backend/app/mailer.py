@@ -27,15 +27,16 @@ class MailError(Exception):
     """The email couldn't be sent. The message is safe to log but not meant for end users."""
 
 
-def send(to: str, subject: str, text: str) -> None:
+def send(to: str, subject: str, text: str, html: str | None = None) -> None:
+    """Send an email with a plain-text body and, optionally, an HTML version of the same content."""
     s = get_settings()
     try:
         if s.mail_backend == "smtp":
-            _smtp(to, subject, text)
+            _smtp(to, subject, text, html)
         elif s.mail_backend == "gmail":
-            _gmail(to, subject, text)
+            _gmail(to, subject, text, html)
         elif s.mail_backend == "brevo":
-            _brevo(to, subject, text)
+            _brevo(to, subject, text, html)
         else:
             log.warning("Email not sent (MAIL_BACKEND=console). To: %s | Subject: %s\n%s", to, subject, text)
     except MailError:
@@ -45,19 +46,21 @@ def send(to: str, subject: str, text: str) -> None:
         raise MailError(str(e)) from e
 
 
-def _message(to: str, subject: str, text: str) -> EmailMessage:
+def _message(to: str, subject: str, text: str, html: str | None = None) -> EmailMessage:
     s = get_settings()
     msg = EmailMessage()
     msg["From"] = f"{s.mail_from_name} <{s.mail_from_email}>"
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(text)
+    if html:
+        msg.add_alternative(html, subtype="html")
     return msg
 
 
-def _smtp(to: str, subject: str, text: str) -> None:
+def _smtp(to: str, subject: str, text: str, html: str | None = None) -> None:
     s = get_settings()
-    msg = _message(to, subject, text)
+    msg = _message(to, subject, text, html)
     with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=TIMEOUT_SECONDS) as smtp:
         smtp.starttls()
         if s.smtp_username:
@@ -65,7 +68,7 @@ def _smtp(to: str, subject: str, text: str) -> None:
         smtp.send_message(msg)
 
 
-def _brevo(to: str, subject: str, text: str) -> None:
+def _brevo(to: str, subject: str, text: str, html: str | None = None) -> None:
     s = get_settings()
     r = httpx.post(
         "https://api.brevo.com/v3/smtp/email",
@@ -75,6 +78,7 @@ def _brevo(to: str, subject: str, text: str) -> None:
             "to": [{"email": to}],
             "subject": subject,
             "textContent": text,
+            **({"htmlContent": html} if html else {}),
         },
         timeout=TIMEOUT_SECONDS,
     )
@@ -116,8 +120,8 @@ def _gmail_access_token(force_refresh: bool = False) -> str:
         return _token[0]
 
 
-def _gmail(to: str, subject: str, text: str) -> None:
-    raw = base64.urlsafe_b64encode(_message(to, subject, text).as_bytes()).decode()
+def _gmail(to: str, subject: str, text: str, html: str | None = None) -> None:
+    raw = base64.urlsafe_b64encode(_message(to, subject, text, html).as_bytes()).decode()
     for attempt in range(2):
         token = _gmail_access_token(force_refresh=attempt > 0)
         r = httpx.post(GMAIL_SEND_URL, headers={"Authorization": f"Bearer {token}"}, json={"raw": raw},

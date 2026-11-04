@@ -49,6 +49,11 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 - Checked: 14 new tests in `tests/test_email_verification.py`; all 188 backend tests pass; migration up and down;
   frontend typecheck; end to end locally (blocked before the code, wrong code counted, right code unlocks);
   screenshot of the page.
+- **Verification email design** (`app/email_templates.py`): HTML in the website's dark theme (near-black, cream
+  text, lime code and italic serif accent; Instrument Serif and Geist where the mail app loads web fonts), (tables and inline styles, so Gmail,
+  Outlook and Apple Mail show it the same) with a plain-text version. Large code, expiry note, "Enter code in
+  HookFlow" button, and a "didn't sign up?" note. Links use the new `APP_URL` setting (set it on Render to
+  `https://web-rook.vercel.app`). Checked at desktop and phone widths.
 - **Privacy policy and terms** at `/privacy` and `/terms` (public, linked in the site footer), for Google's
   sign-in screen and the public site. They describe what is actually stored and for how long. The contact is the
   GitHub issues page unless `NEXT_PUBLIC_CONTACT_EMAIL` is set on Vercel.

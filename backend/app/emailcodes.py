@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app import mailer
+from app import email_templates, mailer
 from app.config import get_settings
 from app.models import EmailCode, User
 
@@ -89,11 +89,8 @@ def check(db: Session, user_id: str, code: str, purpose: str = VERIFY_EMAIL) -> 
 
 def send_verification(to: str, code: str) -> None:
     """Raises mailer.MailError if it couldn't be sent."""
-    minutes = get_settings().email_code_ttl_minutes
-    mailer.send(
-        to,
-        f"{code} is your HookFlow verification code",
-        f"Your HookFlow verification code is:\n\n    {code}\n\n"
-        f"Enter it in the dashboard to finish setting up your account. It expires in {minutes} minutes.\n\n"
-        "If you didn't sign up for HookFlow, ignore this email. Nobody can use the account without this code.\n",
+    s = get_settings()
+    subject, text, html = email_templates.verification_code(
+        code=code, email=to, minutes=s.email_code_ttl_minutes, app_url=s.app_url.rstrip("/")
     )
+    mailer.send(to, subject, text, html)

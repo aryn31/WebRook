@@ -34,7 +34,11 @@ def test_register_emails_a_code_and_locks_the_dashboard(client, mail):
     assert r.json()["user"]["email_verified"] is False
     assert r.json()["verification_email_sent"] is True
     assert mail[-1]["to"] == "a@example.com"
-    assert last_code("a@example.com") in mail[-1]["subject"]
+    code = last_code("a@example.com")
+    assert code in mail[-1]["subject"]
+    # Plain text and HTML versions, both with the code and a link back to the dashboard.
+    assert "/verify-email" in mail[-1]["text"]
+    assert code in mail[-1]["html"] and "/verify-email" in mail[-1]["html"]
 
     me = client.get("/v1/auth/me")
     assert me.status_code == 200 and me.json()["user"]["email_verified"] is False
