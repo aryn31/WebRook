@@ -22,6 +22,7 @@ from app.db import SessionLocal
 from app.models import AuditLog, Delivery, DeliveryAttempt, Event, OutboxMessage, User
 from app.worker import concurrency
 from app.worker.engine import delete_expired, process_delivery, send
+from tests.conftest import verify
 
 URL = "https://hooks.example.com/in"
 
@@ -393,7 +394,8 @@ def test_audit_log_uses_forwarded_ip(client, monkeypatch):
     r = client.post("/v1/auth/register", json={"email": "ip@example.com", "password": "correct-horse-battery"},
                     headers={"X-Forwarded-For": "203.0.113.5"})
     assert r.status_code == 201
-    entry = client.get("/v1/audit-logs").json()["data"][0]
+    verify(client, "ip@example.com")
+    entry = next(e for e in client.get("/v1/audit-logs").json()["data"] if e["action"] == "auth.registered")
     assert entry["ip_address"] == "203.0.113.5"
 
 

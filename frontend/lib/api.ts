@@ -4,7 +4,7 @@
 
 // ---------- Types (copied from the contract) ----------
 
-export type User = { id: string; email: string; created_at: string };
+export type User = { id: string; email: string; created_at: string; email_verified: boolean };
 
 export type Role = "owner" | "admin" | "developer" | "viewer";
 export type MemberRole = Exclude<Role, "owner">;
@@ -416,6 +416,14 @@ function buildUrl(path: string, query?: Query): string {
   return url;
 }
 
+/** Send someone who hasn't verified their email to the code page, then back to where they were. */
+function redirectToVerify() {
+  if (typeof window === "undefined") return;
+  const { pathname, search } = window.location;
+  if (pathname === "/verify-email") return;
+  window.location.assign(`/verify-email?next=${encodeURIComponent(pathname + search)}`);
+}
+
 function redirectToLogin() {
   if (typeof window === "undefined") return;
   const { pathname, search } = window.location;
@@ -462,6 +470,9 @@ export async function request<T>(
     if (res.status === 401 && !NO_REDIRECT_401.includes(path)) {
       redirectToLogin();
     }
+    if (res.status === 403 && e?.code === "email_unverified") {
+      redirectToVerify();
+    }
     if (e && typeof e === "object") {
       const ra = Number(res.headers.get("Retry-After"));
       throw new ApiError(
@@ -490,11 +501,14 @@ export async function request<T>(
 export const api = {
   // Auth (session only)
   register: (email: string, password: string) =>
-    request<{ user: User }>("POST", "/auth/register", { body: { email, password } }),
+    request<{ user: User; verification_email_sent: boolean }>("POST", "/auth/register", { body: { email, password } }),
   login: (email: string, password: string) =>
     request<{ user: User }>("POST", "/auth/login", { body: { email, password } }),
   logout: () => request<void>("POST", "/auth/logout"),
   me: () => request<Me>("GET", "/auth/me"),
+  verifyEmail: (code: string) => request<{ user: User }>("POST", "/auth/verify-email", { body: { code } }),
+  resendVerification: () =>
+    request<{ sent_to: string; resend_after_seconds: number }>("POST", "/auth/resend-verification"),
   switchAccount: (account_id: string) => request<Me>("POST", "/auth/switch-account", { body: { account_id } }),
 
   // Your security (session only)

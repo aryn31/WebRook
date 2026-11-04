@@ -59,6 +59,30 @@ def queued(monkeypatch) -> list[str]:
     return sent
 
 
+SENT_MAIL: list[dict] = []
+
+
+@pytest.fixture(autouse=True)
+def mail(monkeypatch) -> list[dict]:
+    """Capture emails instead of sending them. Each is {"to", "subject", "text"}."""
+    SENT_MAIL.clear()
+    monkeypatch.setattr("app.mailer.send", lambda to, subject, text: SENT_MAIL.append(
+        {"to": to, "subject": subject, "text": text}))
+    return SENT_MAIL
+
+
+def last_code(email: str) -> str:
+    import re
+
+    msg = next(m for m in reversed(SENT_MAIL) if m["to"] == email.lower())
+    return re.search(r"\b(\d{6})\b", msg["text"]).group(1)
+
+
+def verify(client: TestClient, email: str = "a@example.com") -> None:
+    r = client.post("/v1/auth/verify-email", json={"code": last_code(email)})
+    assert r.status_code == 200, r.text
+
+
 @pytest.fixture
 def client():
     from app.main import app
@@ -70,6 +94,7 @@ def client():
 def make_user(client: TestClient, email: str = "a@example.com") -> TestClient:
     r = client.post("/v1/auth/register", json={"email": email, "password": "correct-horse-battery"})
     assert r.status_code == 201, r.text
+    verify(client, email)
     return client
 
 

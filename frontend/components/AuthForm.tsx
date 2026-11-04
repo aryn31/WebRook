@@ -59,10 +59,18 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     setBusy(true);
     setError(null);
     try {
-      if (mode === "login") await api.login(email.trim(), password);
-      else await api.register(email.trim(), password);
+      const res =
+        mode === "login" ? await api.login(email.trim(), password) : await api.register(email.trim(), password);
+      const next = safeNext();
       // Full navigation so middleware sees the fresh cookie.
-      window.location.assign(safeNext());
+      if (res.user.email_verified) {
+        window.location.assign(next);
+      } else {
+        const failed = "verification_email_sent" in res && !res.verification_email_sent;
+        const qs = new URLSearchParams({ next });
+        if (failed) qs.set("send_failed", "1");
+        window.location.assign(`/verify-email?${qs}`);
+      }
     } catch (err) {
       setError({ ...authErrorText(err, mode), code: err instanceof ApiError ? err.code : undefined });
       setBusy(false);
@@ -74,7 +82,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       <div className="auth-head">
         <h1 className="auth-title">{mode === "login" ? "Welcome back" : "Create your account"}</h1>
         <p className="muted">
-          {mode === "login" ? "Log in to see your events and deliveries." : "Free to start. No card, no SDK."}
+          {mode === "login"
+            ? "Log in to see your events and deliveries."
+            : "Free to start. No card, no SDK. We'll email you a code to confirm your address."}
         </p>
       </div>
       <label className="field">

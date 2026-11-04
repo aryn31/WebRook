@@ -92,11 +92,20 @@ def _from_session(db: Session, token: str) -> Principal | None:
 SESSION_SEEN_INTERVAL = timedelta(minutes=5)
 
 
+# The only routes a logged-in person can use before verifying their email.
+UNVERIFIED_ALLOWED = frozenset({
+    "/v1/auth/me", "/v1/auth/logout", "/v1/auth/verify-email", "/v1/auth/resend-verification",
+})
+
+
 def get_principal(request: Request, db: DB) -> Principal:
     principal = _authenticate(request, db)
     principal.ip = client_ip(request)
     if principal.session is not None:
         _touch_session(db, principal.session, principal.ip)
+        if principal.actor.email_verified_at is None and request.url.path not in UNVERIFIED_ALLOWED:
+            raise ApiError(403, "Verify your email address first. We sent a code to " + principal.actor.email + ".",
+                           code="email_unverified")
     return principal
 
 

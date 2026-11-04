@@ -33,6 +33,26 @@ Each entry covers: what was built or changed, decisions made, how it was checked
   (`No module named 'packaging'`). `kombu` wasn't pinned, so Render's fresh build got a newer version that needs
   `packaging` without installing it; the local image still had older cached versions. Pinned `kombu==5.6.2` and
   `packaging==26.3` in `backend/requirements.txt`, and checked with a `--no-cache` build.
+- **Email verification:** new sign-ups get a 6-digit code by email and can only verify, resend or log out until
+  they enter it (`403 email_unverified` everywhere else). Existing accounts were marked verified (migration
+  `0006`, which also adds the `email_codes` table). Codes are stored as an HMAC keyed with
+  `SECRET_ENCRYPTION_KEY`, last 15 minutes, allow 5 wrong guesses, and can be resent after 60 seconds (5 per hour).
+  Signing up with an email whose account was never verified replaces that account, so nobody can squat an
+  address. New routes: `POST /v1/auth/verify-email`, `POST /v1/auth/resend-verification`. Dashboard: a
+  `/verify-email` page (auto-submits at 6 digits, resend countdown, "use a different email"); login, sign-up and
+  any `email_unverified` answer send people there.
+- **Sending email** (`app/mailer.py`): `MAIL_BACKEND` = `console` (default; logs the code), `gmail`, `smtp` or
+  `brevo`. Recommended: `gmail`, the Gmail API over HTTPS from the user's own account (Render's free plan blocks
+  SMTP ports). `backend/scripts/gmail_token.py` (stdlib only, run locally) does the OAuth sign-in with PKCE and
+  prints the refresh token; the backend caches access tokens and retries once on a 401. Setup is in
+  `docs/operations.md#email`. The Google app must be published ("In production"), or tokens expire after 7 days.
+- Checked: 14 new tests in `tests/test_email_verification.py`; all 188 backend tests pass; migration up and down;
+  frontend typecheck; end to end locally (blocked before the code, wrong code counted, right code unlocks);
+  screenshot of the page.
+- **Privacy policy and terms** at `/privacy` and `/terms` (public, linked in the site footer), for Google's
+  sign-in screen and the public site. They describe what is actually stored and for how long. The contact is the
+  GitHub issues page unless `NEXT_PUBLIC_CONTACT_EMAIL` is set on Vercel.
+- **Before deploying:** set the `MAIL_BACKEND=gmail` settings on Render, or new users can't finish signing up.
 - Offered but not chosen yet: two-factor login, blocking leaked passwords, longer lockouts after repeated failures.
 
 ### Left to do

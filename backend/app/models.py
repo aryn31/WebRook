@@ -44,6 +44,23 @@ class User(Base):
     event_rate_limit_per_minute: Mapped[int | None] = mapped_column(Integer)
     daily_event_quota: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = _now_col()
+    # NULL until the person enters the code emailed to them. Unverified users can only verify or log out.
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EmailCode(Base):
+    """A short code emailed to a user. Only a keyed hash is stored. One open code per user and purpose."""
+
+    __tablename__ = "email_codes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ecd"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    purpose: Mapped[str] = mapped_column(String(32))
+    code_hash: Mapped[str] = mapped_column(String(64))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = _now_col()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class UserSession(Base):

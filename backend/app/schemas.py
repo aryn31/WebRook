@@ -2,7 +2,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
 
 T = TypeVar("T")
 
@@ -69,6 +69,12 @@ class UserOut(BaseModel):
     id: str
     email: str
     created_at: datetime
+    email_verified_at: datetime | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def email_verified(self) -> bool:
+        return self.email_verified_at is not None
 
 
 class AccountOut(BaseModel):
@@ -91,6 +97,20 @@ class MeOut(BaseModel):
 
 class UserEnvelope(BaseModel):
     user: UserOut
+
+
+class RegisterOut(UserEnvelope):
+    # False when the verification email couldn't be sent; the dashboard offers to send it again.
+    verification_email_sent: bool
+
+
+class VerifyEmailIn(BaseModel):
+    code: str = Field(min_length=1, max_length=16)
+
+
+class VerificationSentOut(BaseModel):
+    sent_to: str
+    resend_after_seconds: int
 
 
 class SwitchAccountIn(BaseModel):

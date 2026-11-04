@@ -90,6 +90,22 @@ type Me = {
 Body: `{ "account_id": "usr_..." }` → `200 Me`. Work in another account (your own, or a team you belong to). Applies
 to this session only. `404` if you're not a member.
 
+### Email verification
+
+New accounts get a 6-digit code by email. Until it's entered, every other route answers
+`403 email_unverified`, except `GET /v1/auth/me`, `POST /v1/auth/logout` and the two below. `User` objects include
+`email_verified`. `POST /v1/auth/register` also returns `verification_email_sent` (false if sending failed). Signing
+up with the email of an account that was never verified replaces that account; a verified email returns
+`409 email_taken`.
+
+### `POST /v1/auth/verify-email`
+Body: `{ "code": "123456" }` → `200 { "user": User }`. `400 invalid_code` (with `details.attempts_left`) or
+`400 code_expired`: after 15 minutes or 5 wrong guesses, request a new code.
+
+### `POST /v1/auth/resend-verification` → `200 { "sent_to", "resend_after_seconds" }`
+Emails a new code; the previous one stops working. `429 resend_too_soon` within 60 seconds of the last code (with
+`Retry-After`), at most 5 per hour, `503 email_failed` if sending failed, `400 already_verified`.
+
 ### Password and sessions
 
 These act on the logged-in person, whichever account they're working in, and are recorded in that person's own
@@ -427,6 +443,7 @@ type AuditLog = {
 | Action | When |
 | --- | --- |
 | `auth.registered`, `auth.login` | Account created, signed in |
+| `auth.email_verified` | Email address verified |
 | `auth.password_changed`, `auth.session_signed_out`, `auth.sessions_signed_out` | Password changed, sessions signed out from the Security page |
 | `api_key.created`, `api_key.revoked` | API key changes |
 | `endpoint.created`, `endpoint.archived` | |

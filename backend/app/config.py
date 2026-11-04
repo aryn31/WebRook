@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,6 +28,26 @@ class Settings(BaseSettings):
     session_cookie_name: str = "hf_session"
     session_ttl_hours: int = 24 * 7
     cookie_secure: bool = False
+
+    # Email (verification codes). "console" only logs emails, for local development.
+    # On hosts that block SMTP ports (such as Render's free plan) use "gmail" or "brevo", which send over HTTPS.
+    mail_backend: Literal["console", "smtp", "gmail", "brevo"] = "console"
+    mail_from_email: str = "no-reply@hookflow.local"
+    mail_from_name: str = "HookFlow"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    brevo_api_key: str = ""
+    # Gmail API: an OAuth client and a refresh token from backend/scripts/gmail_token.py.
+    gmail_client_id: str = ""
+    gmail_client_secret: str = ""
+    gmail_refresh_token: str = ""
+    # Email verification codes
+    email_code_ttl_minutes: int = 15
+    email_code_max_attempts: int = 5
+    email_code_resend_seconds: int = 60
+    email_codes_per_hour: int = 5
 
     # Limits
     max_payload_bytes: int = 1024 * 1024

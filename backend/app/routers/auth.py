@@ -1,10 +1,10 @@
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Request, Response
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
-from app import audit, ratelimit
+from app import audit, emailcodes, mailer, ratelimit
 from app.clientip import client_ip
 from app.config import get_settings
 from app.deps import DB, Principal, SessionPrincipal, member_role
@@ -19,11 +19,14 @@ from app.schemas import (
     PasswordChangeIn,
     PasswordChangeOut,
     RegisterIn,
+    RegisterOut,
     SessionOut,
     SignedOutOut,
     SwitchAccountIn,
     UserEnvelope,
     UserOut,
+    VerificationSentOut,
+    VerifyEmailIn,
 )
 from app.security import hash_password, new_session_token, sha256_hex, verify_password
 
@@ -77,10 +80,18 @@ def _start_session(db: DB, request: Request, response: Response, user: User, act
     _set_cookie(response, token)
 
 
-@router.post("/register", status_code=201, response_model=UserEnvelope)
+@router.post("/register", status_code=201, response_model=RegisterOut)
 def register(body: RegisterIn, request: Request, response: Response, db: DB) -> dict:
     email = body.email.lower()
     _limit(request, "register", email)
+    existing = db.scalar(select(User).where(func.lower(User.email) == email))
+    if existing is not None:
+        if existing.email_verified_at is not None:
+            raise ApiError(409, "An account with this email already exists.", code="email_taken")
+        # Someone signed up with this email but never proved they own it, so the account can't have done anything.
+        # Replace it: otherwise anyone could block the real owner from signing up.
+        db.execute(delete(User).where(User.id == existing.id))
+        db.flush()
     user = User(email=email, password_hash=hash_password(body.password))
     db.add(user)
     try:
@@ -88,8 +99,59 @@ def register(body: RegisterIn, request: Request, response: Response, db: DB) -> 
     except IntegrityError:
         db.rollback()
         raise ApiError(409, "An account with this email already exists.", code="email_taken") from None
+    code = emailcodes.issue(db, user)
     _start_session(db, request, response, user, "auth.registered")
-    return {"user": UserOut.model_validate(user)}
+    return {"user": UserOut.model_validate(user), "verification_email_sent": _try_send(user.email, code)}
+
+
+def _try_send(email: str, code: str) -> bool:
+    try:
+        emailcodes.send_verification(email, code)
+        return True
+    except mailer.MailError:
+        return False
+
+
+@router.post("/verify-email", response_model=UserEnvelope)
+def verify_email(body: VerifyEmailIn, principal: SessionPrincipal, db: DB) -> dict:
+    """Enter the code from the verification email. Unlocks the dashboard."""
+    me = db.get(User, principal.actor.id)
+    if me.email_verified_at is not None:
+        return {"user": UserOut.model_validate(me)}
+    ratelimit.enforce(f"auth:verify:user:{me.id}", get_settings().auth_rate_limit_per_minute)
+    ok, left = emailcodes.check(db, me.id, body.code)
+    if not ok:
+        db.commit()  # keep the attempt count
+        if left is None:
+            raise ApiError(400, "This code has expired or been used too many times. Send a new one.",
+                           code="code_expired")
+        raise ApiError(400, f"That code isn't right. {left} attempt{'s' if left != 1 else ''} left.",
+                       code="invalid_code", details={"attempts_left": left})
+    me.email_verified_at = datetime.now(UTC)
+    audit.record(db, _personal(principal), "auth.email_verified", "user", me.id)
+    db.commit()
+    return {"user": UserOut.model_validate(me)}
+
+
+@router.post("/resend-verification", response_model=VerificationSentOut)
+def resend_verification(principal: SessionPrincipal, db: DB) -> dict:
+    """Email a new verification code. The previous code stops working."""
+    s = get_settings()
+    me = db.get(User, principal.actor.id)
+    if me.email_verified_at is not None:
+        raise ApiError(400, "Your email is already verified.", code="already_verified")
+    last = emailcodes.last_sent_at(db, me.id, emailcodes.VERIFY_EMAIL)
+    if last is not None:
+        wait = s.email_code_resend_seconds - int((datetime.now(UTC) - last).total_seconds())
+        if wait > 0:
+            raise ApiError(429, f"Wait {wait} seconds before sending another code.", code="resend_too_soon",
+                           headers={"Retry-After": str(wait)})
+    ratelimit.enforce(f"auth:verify-send:user:{me.id}", s.email_codes_per_hour, window_seconds=3600)
+    code = emailcodes.issue(db, me)
+    db.commit()
+    if not _try_send(me.email, code):
+        raise ApiError(503, "We couldn't send the email. Try again in a minute.", code="email_failed")
+    return {"sent_to": me.email, "resend_after_seconds": s.email_code_resend_seconds}
 
 
 @router.post("/login", response_model=UserEnvelope)

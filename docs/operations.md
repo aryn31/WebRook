@@ -48,6 +48,14 @@ All settings are environment variables. Only `SECRET_ENCRYPTION_KEY` is required
 | `METRICS_TOKEN` | unset | If set, `GET /metrics` needs `Authorization: Bearer <token>` |
 | `ALERT_QUEUE_DELAY_SECONDS` | `300` | Alert when due work has waited longer than this |
 | `ALERT_WORKER_SILENCE_SECONDS` | `120` | `/health/ready` reports the worker as `stale` after this |
+| `MAIL_BACKEND` | `console` | `console` (log emails, for development), `gmail`, `smtp` or `brevo`. See [Email](#email) |
+| `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | — | For `MAIL_BACKEND=gmail`; from `backend/scripts/gmail_token.py` |
+| `MAIL_FROM_EMAIL` / `MAIL_FROM_NAME` | `no-reply@hookflow.local` / `HookFlow` | Sender of verification emails |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` | — / `587` | For `MAIL_BACKEND=smtp` (STARTTLS) |
+| `BREVO_API_KEY` | — | For `MAIL_BACKEND=brevo` |
+| `EMAIL_CODE_TTL_MINUTES` | `15` | How long a verification code works |
+| `EMAIL_CODE_MAX_ATTEMPTS` | `5` | Wrong guesses before a code stops working |
+| `EMAIL_CODE_RESEND_SECONDS` / `EMAIL_CODES_PER_HOUR` | `60` / `5` | Limits on sending new codes, per user |
 
 To change one account's limits, set `event_rate_limit_per_minute` or `daily_event_quota` on its row in `users`
 (`NULL` uses the default, `0` is unlimited):
@@ -55,6 +63,44 @@ To change one account's limits, set `event_rate_limit_per_minute` or `daily_even
 ```sql
 UPDATE users SET daily_event_quota = 100000 WHERE email = 'big-customer@example.com';
 ```
+
+## Email
+
+New accounts must enter a 6-digit code emailed to them before they can use the dashboard. Accounts that existed
+before this was added are treated as verified. An unverified account can only verify, resend the code, or log
+out. If someone else signs up with your email and never verifies it, signing up again replaces their account.
+
+With `MAIL_BACKEND=console` (the default, used by Docker Compose) nothing is sent: the code is printed in the API
+logs (`docker compose logs api | grep -A4 "Email not sent"`). **Production needs a real backend, or new users
+can't finish signing up.**
+
+**Render's free plan blocks outgoing SMTP ports**, so send through the Gmail API instead. It uses HTTPS, sends
+from your own Gmail account (so it rarely lands in spam), and allows about 500 emails a day. One-time setup:
+
+1. Go to console.cloud.google.com and create a project (any name, e.g. HookFlow).
+2. **APIs & Services → Library**: search for **Gmail API** and click **Enable**.
+3. **Google Auth Platform → Branding** (called "OAuth consent screen" in older consoles): fill in an app name and
+   your email. Choose **External** if asked.
+4. **Audience**: click **Publish app** so the status is **In production**. While it says "Testing", Google expires
+   the token after 7 days and emails stop. You don't need Google's verification: only you will sign in.
+5. **Clients → Create client**: application type **Desktop app**, or **Web application** with the authorized
+   redirect URI `http://127.0.0.1:8765/` (exactly, with the trailing slash). Copy the client ID and client secret.
+   No authorized domain is needed.
+6. On your computer, run `python3 backend/scripts/gmail_token.py --test-to <your email>`. Paste the ID and
+   secret, sign in with the Gmail account that should send the codes, and allow "Send email on your behalf".
+   (Google warns the app isn't verified: click **Advanced → Go to … (unsafe)**; it's your own app.)
+7. The script sends a test email and prints the settings. On the Render API service set `MAIL_BACKEND=gmail`,
+   `MAIL_FROM_EMAIL` (that Gmail address), `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET` and `GMAIL_REFRESH_TOKEN`.
+
+The token can only send email, not read it. Revoke it at myaccount.google.com/permissions; then run the script
+again. If it stops working, the API logs show `Google token refresh failed … invalid_grant`.
+
+Other options: `MAIL_BACKEND=smtp` with `SMTP_HOST`, `SMTP_USERNAME` and `SMTP_PASSWORD` on hosts that allow
+SMTP (for Gmail: `smtp.gmail.com` and an app password), or `MAIL_BACKEND=brevo` with `BREVO_API_KEY` and a sender
+verified in Brevo.
+
+If an email fails to send, sign-up still succeeds and the page offers to send the code again. Failures are logged
+by the `hookflow.mail` logger.
 
 ## Metrics
 

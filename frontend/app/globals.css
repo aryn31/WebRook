@@ -742,7 +742,7 @@ tr.row-click:has(+ .row-explain) td { border-bottom: 0; padding-bottom: 4px; }
 
 .lp-footer { border-top: 1px solid var(--border); padding: 28px 0; }
 .lp-footer-inner { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
-.lp-footer-links { margin-left: auto; display: flex; gap: 20px; font-size: 13.5px; }
+.lp-footer-links { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 13.5px; }
 .lp-footer-links a { color: var(--text-2); }
 
 @media (max-width: 960px) {
@@ -993,3 +993,18 @@ tr.row-click:has(+ .row-explain) td { border-bottom: 0; padding-bottom: 4px; }
 .security-form { max-width: 420px; }
 .security-intro { margin: 0 0 12px; }
 .security-this { margin-left: 8px; }
+
+/* Email verification */
+.verify-code { font-family: var(--mono); font-size: 22px; letter-spacing: 0.35em; text-align: center; }
+.verify-links { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
+.link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--link); cursor: pointer; text-underline-offset: 3px; }
+.link-button:hover:not(:disabled) { text-decoration: underline; }
+.link-button:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+
+/* Privacy and terms */
+.legal { max-width: 720px; padding-top: 72px; padding-bottom: 96px; line-height: 1.65; }
+.legal-title { font-family: var(--serif); font-weight: 400; font-size: clamp(40px, 6vw, 64px); line-height: 1; letter-spacing: -0.02em; margin: 0 0 12px; }
+.legal h2 { font-size: 19px; margin: 36px 0 8px; }
+.legal p, .legal li { color: var(--text-2); }
+.legal ul { padding-left: 20px; margin: 8px 0; }
+.legal li { margin: 4px 0; }

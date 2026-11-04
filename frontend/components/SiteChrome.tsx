@@ -37,6 +37,8 @@ export function SiteFooter() {
           <a href={DOCS_URL} target="_blank" rel="noreferrer">API reference</a>
           <Link href="/login">Log in</Link>
           <Link href="/register">Sign up</Link>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/terms">Terms</Link>
         </nav>
       </div>
     </footer>
