@@ -1,8 +1,20 @@
 # HookFlow Product Requirements Document (PRD)
 
-**Version:** 1.2 · **Status:** Public beta ready (Milestones 1–3 complete; Milestone 4 complete except email alerts) · **Last updated:** 2026-11-01  
+**Version:** 1.3 · **Status:** Live on Render and Vercel (Milestones 1–3 complete; Milestone 4 complete except email alerts) · **Last updated:** 2026-11-04  
 **Product type:** Developer Infrastructure / Backend SaaS  
 **Primary objective:** Build a reliable, secure, and usable webhook delivery platform.
+
+### What changed in v1.3
+
+Milestone 4 is complete except email alerts. Changes are marked **Status (v1.3)** or **Decision (v1.3)** in the text,
+and [section 16](#16-release-plan) lists each item.
+
+- Team accounts with owner, admin, developer and viewer roles, invited by link.
+- Scoped API keys, for example a key that can only send events.
+- Pattern subscriptions such as `order.*` (section 18).
+- Custom retry schedules per endpoint (FR-06, section 18).
+- Bulk replay of failed deliveries, with a dry run.
+- Endpoint health indicators, and Python and Node SDKs.
 
 ### What changed in v1.2
 
@@ -504,6 +516,13 @@ HookFlow must retry eligible failed deliveries.
 > - Each endpoint has its own `max_attempts`, from 1 to 10 (default 5). This answers the open question in section 18.
 > - A delivery takes its limit when it is created, so changing the limit only affects new deliveries.
 > - Fully custom per-endpoint retry schedules are left to Milestone 4.
+>
+> **Decision (v1.3): custom schedules**
+>
+> - An endpoint can set `retry_schedule`: 1–9 waits, each from 1 second to 24 hours. The last wait repeats for later
+>   retries.
+> - Custom waits get ±10% jitter. A longer `Retry-After` from the destination still wins.
+> - Without a schedule, the default backoff above applies.
 >
 > **Decision (v1.1): visibility**
 >
@@ -1219,7 +1238,7 @@ can be recovered after a worker restart. *(Met. Recovery from a Redis outage is 
 **Exit criteria:** Critical security and recovery tests pass, operational metrics are available, and the system can
 be used safely within documented limits. *(Met.)*
 
-### Milestone 4: Product Improvements (Week 6 and beyond)
+### Milestone 4: Product Improvements (Week 6 and beyond). **Status (v1.3): Complete except email alerts**
 
 Potential additions, with their status (2026-11-02):
 
@@ -1293,12 +1312,12 @@ Open questions and their status:
 
 | Question | Status (v1.1) |
 | --- | --- |
-| Should event subscriptions use exact event-type matching only, or support wildcard patterns? | **Decided:** exact matches plus `*` for all events. Pattern wildcards (`order.*`) are deferred to Milestone 4. |
+| Should event subscriptions use exact event-type matching only, or support wildcard patterns? | **Decided:** exact matches plus `*` for all events. Pattern wildcards (`order.*`) are deferred to Milestone 4. **Status (v1.3):** done. A trailing `.*` matches any deeper type, so `order.*` matches `order.created` and `order.item.added`. |
 | How long should events and delivery attempts be retained? | **Decided (v1.2):** 30 days for events with their deliveries and attempts (events with work still in progress are kept until it finishes), and 1 year for the audit log. Both are configurable. |
 | Should endpoint deletion disable new deliveries immediately while preserving existing history? | **Decided: yes.** Deletion archives the endpoint, stops new deliveries, cancels unsent ones, and keeps history. |
-| Should users be able to customize retry policies in the MVP? | **Decided: partly.** Per-endpoint maximum attempts (1–10). Backoff timing is set system-wide; custom schedules are deferred to Milestone 4. |
+| Should users be able to customize retry policies in the MVP? | **Decided: partly.** Per-endpoint maximum attempts (1–10). Backoff timing is set system-wide; custom schedules are deferred to Milestone 4. **Status (v1.3):** custom schedules done (FR-06). |
 | Which deployment provider and object-storage options will be used? | **Decided (v1.2):** Render for the API, worker, Postgres and Redis, and Vercel for the dashboard, with GitHub Actions for CI. No object storage is needed yet: payloads and response bodies are capped and stored in Postgres. |
-| Will the initial service be public, private, or limited to invited beta users? | **Recommendation (v1.2):** the SSRF and rate-limit work is done, so a public beta is possible. Keep the default limits, and set `METRICS_TOKEN` and `TRUSTED_PROXY_COUNT` first. |
+| Will the initial service be public, private, or limited to invited beta users? | **Recommendation (v1.2):** the SSRF and rate-limit work is done, so a public beta is possible. Keep the default limits, and set `METRICS_TOKEN` and `TRUSTED_PROXY_COUNT` first. **Status (v1.3):** deployed, with both set. |
 
 ## 19. Definition of Done
 

@@ -61,8 +61,8 @@ Load test: [`loadtest/ingest.py`](loadtest/ingest.py); results and how to run it
 
 ## Documentation
 
-- [docs/PRD.md](docs/PRD.md): product requirements v1.2, the original PRD plus the decisions made while building
-  ([PDF](docs/HookFlow-PRD-v1.2.pdf); the original v1.0 is `HookFlow.pdf`).
+- [docs/PRD.md](docs/PRD.md): product requirements v1.3, the original PRD plus the decisions made while building
+  ([PDF](docs/HookFlow-PRD-v1.3.pdf); the original v1.0 is `HookFlow.pdf`).
 - [docs/api.md](docs/api.md): API reference, delivery behaviour, and how receivers verify signatures.
 - [docs/operations.md](docs/operations.md): running it in production: every setting, metrics, alerts, retention,
   security notes and load-test results.

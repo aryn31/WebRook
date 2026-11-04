@@ -15,12 +15,15 @@ Each entry covers: what was built or changed, decisions made, how it was checked
   for production.
 - Added `.github/workflows/keep-awake.yml`: pings `/health/live` every 5 minutes so Render's free plan doesn't
   sleep. It does nothing until the repository variable `HOOKFLOW_API_URL` is set in GitHub.
+- The user set `HOOKFLOW_API_URL`, `TRUSTED_PROXY_COUNT=2` and `METRICS_TOKEN`.
+- PRD updated to v1.3 (`docs/PRD.md`): a "What changed in v1.3" section, Milestone 4 marked complete except email
+  alerts, and the custom-schedule, pattern and launch decisions recorded. `docs/HookFlow-PRD-v1.3.pdf` (33 pages)
+  replaces the v1.2 PDF, built from the Markdown with headless Chrome as before.
 
 ### Left to do
-- Set `HOOKFLOW_API_URL` in GitHub, then check the free Postgres expiry date on Render.
-- Check `/health/ready` on the live API. Set `TRUSTED_PROXY_COUNT=2` and `METRICS_TOKEN` on Render.
+- Check the free Postgres expiry date on Render, and that the audit log shows real IPs.
 - Email alerts when an endpoint keeps failing (the last Milestone 4 item).
-- Optional: publish the SDKs to PyPI and npm, rebuild the PRD PDF, and update the resume text with the Milestone 4
+- Optional: publish the SDKs to PyPI and npm and update the resume text with the Milestone 4
   features.
 
 ## 2026-11-02 — Milestone 4 (Product Improvements)
