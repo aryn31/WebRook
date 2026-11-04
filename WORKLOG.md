@@ -29,6 +29,10 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 - Checked: 11 new tests in `tests/test_account_security.py`; all 174 backend tests pass; migration up and down;
   frontend typecheck; end to end through the dashboard proxy with two browsers (the other one was signed out after
   the password change); screenshot of the page.
+- **Render deploy crash fixed:** the Security page deploy built fine but the worker crashed on start
+  (`No module named 'packaging'`). `kombu` wasn't pinned, so Render's fresh build got a newer version that needs
+  `packaging` without installing it; the local image still had older cached versions. Pinned `kombu==5.6.2` and
+  `packaging==26.3` in `backend/requirements.txt`, and checked with a `--no-cache` build.
 - Offered but not chosen yet: two-factor login, blocking leaked passwords, longer lockouts after repeated failures.
 
 ### Left to do

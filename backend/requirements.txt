@@ -10,5 +10,8 @@ argon2-cffi==23.1.0
 cryptography==44.0.0
 httpx==0.28.1
 celery[redis]==5.4.0
+# Pinned: newer kombu releases import `packaging` without installing it, which crashed the worker on Render.
+kombu==5.6.2
+packaging==26.3
 redis==5.2.1
 prometheus-client==0.21.1
