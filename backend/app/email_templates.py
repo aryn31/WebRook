@@ -84,7 +84,8 @@ def _layout(*, preheader: str, body: str, app_url: str) -> str:
 
 
 def verification_code(*, code: str, email: str, minutes: int, app_url: str) -> tuple[str, str, str]:
-    subject = f"Your HookFlow verification code: {code}"
+    # The code stays out of the subject and preview text, so it isn't shown in notifications or on a lock screen.
+    subject = "Confirm your email for HookFlow"
     verify_url = f"{app_url.rstrip('/')}/verify-email"
 
     text = f"""Confirm your email address
