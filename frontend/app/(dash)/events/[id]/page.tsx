@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { FanOut } from "@/components/FanOut";
+import { JsonView } from "@/components/JsonView";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, errorMessage, type Delivery, type EventReplayed, type HookEvent, type ReplaySkipped } from "@/lib/api";
@@ -197,7 +199,14 @@ export default function EventDetailPage() {
         <Link href="/events">Events</Link> <span className="muted">/</span>
       </div>
       <PageHeader
-        title={<span className="mono">{event.event_type}</span>}
+        title={
+          <span className="detail-title">
+            <span className={`ev-icon ev-icon-lg ${event.deliveries.failed > 0 ? "ev-icon-bad" : event.deliveries.total > 0 && event.deliveries.delivered === event.deliveries.total ? "ev-icon-ok" : ""}`} aria-hidden>
+              {event.event_type.split(".")[0].slice(0, 2)}
+            </span>
+            <span className="mono detail-title-text">{event.event_type}</span>
+          </span>
+        }
         sub={
           <span className="row-wrap">
             <span className="mono">{event.id}</span>
@@ -241,6 +250,7 @@ export default function EventDetailPage() {
               <p className="muted small grow">Click a delivery to see each attempt and the response your endpoint returned.</p>
               <ReplayEventPanel eventId={event.id} deliveries={deliveries} onDone={refresh} />
             </div>
+            <FanOut eventType={event.event_type} deliveries={deliveries} />
             <DeliveryTable deliveries={deliveries} show={["endpoint"]} onReplayed={refresh} />
           </>
         )}
@@ -251,7 +261,7 @@ export default function EventDetailPage() {
           <h2>Payload</h2>
           <CopyButton text={payload} label="Copy JSON" />
         </div>
-        <pre className="mono payload">{payload}</pre>
+        <JsonView text={payload} />
       </section>
     </div>
   );

@@ -235,15 +235,26 @@ export default function ApiKeysPage() {
                 {sorted.map((k) => (
                   <tr key={k.id} className={k.revoked_at ? "row-muted" : ""}>
                     <td>
-                      {k.name}{" "}
+                      <span className="person">
+                        <span className="key-icon" aria-hidden>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M8 19a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm3-7 8.5-8.5M16 7l2.5 2.5M14 9l2 2" /></svg>
+                        </span>
+                        <span className="key-name">{k.name}</span>
+                      </span>{" "}
                       {k.revoked_at && (
                         <span className="badge badge-grey" title={`Revoked ${new Date(k.revoked_at).toISOString()}`}>
                           Revoked
                         </span>
                       )}
                     </td>
-                    <td className="mono">{k.prefix}_…</td>
-                    <td title={k.scopes.join("\n")}>{scopeSummary(k.scopes, scopeInfo.length || 7)}</td>
+                    <td><code className="key-prefix mono">{k.prefix}_…</code></td>
+                    <td title={k.scopes.join("\n")}>
+                      {(() => {
+                        const label = scopeSummary(k.scopes, scopeInfo.length || 7);
+                        const tone = label === "Full access" ? "full" : label === "Send events only" ? "send" : label === "Read only" ? "read" : "custom";
+                        return <span className={`access access-${tone}`}>{label}</span>;
+                      })()}
+                    </td>
                     <td>
                       <Time iso={k.created_at} />
                     </td>

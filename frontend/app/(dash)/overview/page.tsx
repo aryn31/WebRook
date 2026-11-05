@@ -8,6 +8,7 @@ import { SeriesChart } from "@/components/SeriesChart";
 import { DeliveryExplanation } from "@/components/DeliveryTable";
 import { Empty, ErrorBox, Loading, PageHeader, Time } from "@/components/ui";
 import { useMe } from "@/components/MeContext";
+import { Ring } from "@/components/Ring";
 
 const RANGES: { value: StatsRange; label: string }[] = [
   { value: "24h", label: "24h" },
@@ -129,30 +130,6 @@ function UsageCard({ usage }: { usage: Usage }) {
 function greeting(): string {
   const h = new Date().getHours();
   return h < 5 ? "Working late" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
-}
-
-/** Success rate as a ring that fills in. */
-function Ring({ pct, tone }: { pct: number | null; tone: string }) {
-  const r = 52;
-  const c = 2 * Math.PI * r;
-  const [shown, setShown] = useState(0);
-  useEffect(() => {
-    const id = window.requestAnimationFrame(() => setShown(pct ?? 0));
-    return () => window.cancelAnimationFrame(id);
-  }, [pct]);
-  return (
-    <div className={`ring ring-${tone}`}>
-      <svg viewBox="0 0 120 120" aria-hidden>
-        <circle cx="60" cy="60" r={r} className="ring-track" />
-        <circle cx="60" cy="60" r={r} className="ring-value" strokeDasharray={c}
-          strokeDashoffset={c * (1 - shown / 100)} transform="rotate(-90 60 60)" />
-      </svg>
-      <div className="ring-label">
-        <span className="ring-num">{pct == null ? "—" : `${pct}%`}</span>
-        <span className="ring-sub">success</span>
-      </div>
-    </div>
-  );
 }
 
 function verdict(rate: number | null, failed: number, retrying: number): { tone: string; title: string; body: string } {
@@ -326,7 +303,7 @@ export default function OverviewPage() {
       <ErrorBox error={statsErr} onRetry={() => loadStats(range)} />
 
       <section className={`card hero-card hero-${v.tone}`}>
-        <Ring pct={stats ? successRate : null} tone={v.tone} />
+        <Ring pct={stats ? successRate : null} />
         <div className="hero-main">
           <div className="hero-verdict">
             <span className="hero-verdict-dot" aria-hidden />

@@ -1,5 +1,6 @@
 "use client";
 
+import { Avatar } from "@/components/Avatar";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, MEMBER_ROLES, type Invite, type Member, type MemberRole, type Role } from "@/lib/api";
 import { accountLabel, ROLE_LABEL, useMe } from "@/components/MeContext";
@@ -288,7 +289,10 @@ export default function TeamPage() {
                   return (
                     <tr key={m.user_id}>
                       <td>
-                        <span className="team-email">{m.email}</span>
+                        <span className="person">
+                          <Avatar email={m.email} self={m.user_id === me.user.id} />
+                          <span className="team-email">{m.email}</span>
+                        </span>
                         {m.user_id === me.user.id && <span className="badge badge-grey team-you">You</span>}
                       </td>
                       <td>

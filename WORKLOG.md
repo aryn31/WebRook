@@ -59,6 +59,18 @@ Each entry covers: what was built or changed, decisions made, how it was checked
   is dark and Light wasn't picked, or when Dark was picked. The live demo and photo panels stay dark on purpose.
   Checked in headless Chrome: picking Light on a dark system, the choice carrying to other pages, Dark on a light
   system, and back to System.
+- **Remaining dashboard pages redesigned:**
+  - Single event: big title with a coloured badge; a route diagram (`components/FanOut.tsx`) from the event to
+    each endpoint, lines coloured by result with status code and attempts; colour-coded JSON payload
+    (`components/JsonView.tsx`).
+  - Single endpoint: titled by its description; a health card (success ring, verdict, last error, attempts /
+    succeeded / failed / last attempt); "Settings" list; signing secret and test event side by side.
+  - API keys: key icon, prefix chip, colour-coded access (full / send only / read only / custom).
+  - Team: avatars with a stable colour per person (`components/Avatar.tsx`; the sidebar uses the same initials).
+  - Security: device icons (laptop / phone / terminal) for sessions; tips for a strong password beside the form.
+  - Audit log: coloured icon per kind of action (`components/AuditIcon.tsx`); "auth.email_verified" now reads
+    "Email verified".
+  - The success ring is now shared (`components/Ring.tsx`). Checked in dark, light and phone width.
 - No new settings, so deploying is just commit and push.
 
 ## 2026-11-04 — Milestone 4 deployed

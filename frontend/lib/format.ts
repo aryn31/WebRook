@@ -213,6 +213,7 @@ export const AUDIT_LABEL: Record<string, string> = {
   "auth.login": "Logged in",
   "auth.password_changed": "Password changed",
   "auth.password_reset": "Password reset by email",
+  "auth.email_verified": "Email verified",
   "auth.session_signed_out": "Signed out a session",
   "auth.sessions_signed_out": "Signed out other sessions",
   "api_key.created": "API key created",

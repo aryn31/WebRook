@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type Delivery, type Endpoint, type EndpointHealth, type EventAccepted } from "@/lib/api";
-import { HealthBadge } from "@/components/EndpointHealth";
+import { Ring } from "@/components/Ring";
 import { EventTypeList, EventTypesInput } from "@/components/EventTypesInput";
 import { DeliveryTable } from "@/components/DeliveryTable";
 import { MaxAttemptsInput, maxAttemptsError } from "@/components/MaxAttemptsInput";
@@ -101,6 +101,40 @@ function EditForm({ endpoint, onSaved, onCancel }: { endpoint: Endpoint; onSaved
         </button>
       </div>
     </form>
+  );
+}
+
+const HEALTH_COPY: Record<EndpointHealth["state"], { tone: string; title: string; body: string }> = {
+  healthy: { tone: "ok", title: "Healthy", body: "It's accepting what HookFlow sends." },
+  degraded: { tone: "retrying", title: "Some attempts are failing", body: "Most requests get through, but not all. Retries are covering the gaps." },
+  failing: { tone: "failed", title: "Failing", body: "Recent attempts were rejected. Fix the endpoint, then replay what failed below." },
+  idle: { tone: "idle", title: "No traffic yet", body: "No delivery attempts in the last 24 hours. Send a test event to check it." },
+};
+
+function HealthCard({ health }: { health: EndpointHealth }) {
+  const c = HEALTH_COPY[health.state];
+  const pct = health.success_rate == null ? null : Math.round(health.success_rate * 1000) / 10;
+  const failed = health.attempts - health.successes;
+  return (
+    <section className={`card hero-card hero-${c.tone} ep-hero`}>
+      <Ring pct={pct} />
+      <div className="hero-main">
+        <div className="hero-verdict"><span className="hero-verdict-dot" aria-hidden />{c.title}</div>
+        <p className="hero-body">{c.body}</p>
+        {health.last_success === false && (
+          <div className="ep-hero-error">
+            <span className="mono">{health.last_status_code ?? "ERR"}</span>
+            {health.last_error ?? `Destination returned HTTP ${health.last_status_code}.`}
+          </div>
+        )}
+        <div className="hero-counts">
+          <div className="hero-count"><span className="hero-count-label">Attempts (24h)</span><span className="hero-count-value">{health.attempts}</span></div>
+          <div className="hero-count count-delivered"><span className="hero-count-label"><span className="pill-dot dot-delivered" aria-hidden /> Succeeded</span><span className="hero-count-value">{health.successes}</span></div>
+          <div className="hero-count count-failed"><span className="hero-count-label"><span className="pill-dot dot-failed" aria-hidden /> Failed</span><span className="hero-count-value">{failed}</span></div>
+          <div className="hero-count"><span className="hero-count-label">Last attempt</span><span className="hero-count-value hero-count-time">{health.last_attempt_at ? relative(health.last_attempt_at) : "—"}</span></div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -381,11 +415,12 @@ export default function EndpointDetailPage() {
         <Link href="/endpoints">Endpoints</Link> <span className="muted">/</span>
       </div>
       <PageHeader
-        title={<span className="mono title-url">{endpoint.url}</span>}
+        title={endpoint.description || new URL(endpoint.url).host}
         sub={
           <span className="row-wrap">
             {endpoint.enabled ? <span className="badge badge-green">Enabled</span> : <span className="badge badge-grey">Disabled</span>}
-            <span className="mono muted small">{endpoint.id}</span>
+            <span className="mono detail-url">{endpoint.url}</span>
+            <CopyButton text={endpoint.url} label="Copy URL" />
           </span>
         }
         actions={
@@ -409,9 +444,11 @@ export default function EndpointDetailPage() {
         <div className="alert alert-warning">This endpoint is disabled. It won&apos;t receive new deliveries until you enable it.</div>
       )}
 
+      {health && !editing && <HealthCard health={health} />}
+
       <section className="card">
         <div className="card-head">
-          <h2>Details</h2>
+          <h2>Settings</h2>
           <Link href={`/audit-log?resource_id=${endpoint.id}`} className="small">
             Audit log →
           </Link>
@@ -427,10 +464,8 @@ export default function EndpointDetailPage() {
           />
         ) : (
           <dl className="dl">
-            <dt>Health (24h)</dt>
-            <dd>
-              <HealthBadge health={health} detailed />
-            </dd>
+            <dt>ID</dt>
+            <dd className="mono small">{endpoint.id}</dd>
             <dt>URL</dt>
             <dd className="mono break">{endpoint.url}</dd>
             <dt>Description</dt>
@@ -466,6 +501,7 @@ export default function EndpointDetailPage() {
         )}
       </section>
 
+      <div className="detail-grid">
       {canWrite && (
         <SecretSection
           endpoint={endpoint}
@@ -504,6 +540,7 @@ export default function EndpointDetailPage() {
           <ErrorBox error={testErr} />
         </section>
       )}
+      </div>
 
       <section className="card">
         <div className="card-head">

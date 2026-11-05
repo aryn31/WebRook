@@ -1,5 +1,6 @@
 "use client";
 
+import { AuditIcon } from "@/components/AuditIcon";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -199,8 +200,13 @@ function AuditLogView() {
                         <Time iso={log.created_at} />
                       </td>
                       <td>
-                        <span title={log.action}>{auditLabel(log.action)}</span>
-                        <div className="mono muted tiny">{log.action}</div>
+                        <div className="person">
+                          <AuditIcon action={log.action} />
+                          <div>
+                            <span title={log.action}>{auditLabel(log.action)}</span>
+                            <div className="mono muted tiny">{log.action}</div>
+                          </div>
+                        </div>
                       </td>
                       <td className="nowrap-cell">
                         <Actor log={log} />

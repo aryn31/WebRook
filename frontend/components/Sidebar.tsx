@@ -8,6 +8,7 @@ import { Brand } from "./Brand";
 import { IconAudit, IconDeliveries, IconEndpoints, IconEvents, IconHome, IconKey, IconLogout, IconOverview, IconShield, IconTeam } from "./Icons";
 import { accountLabel, ROLE_LABEL, useMe } from "./MeContext";
 import { ThemeToggle } from "./ThemeToggle";
+import { initials } from "./Avatar";
 
 const NAV = [
   {
@@ -35,12 +36,6 @@ const NAV = [
   },
 ];
 
-function initials(email: string): string {
-  const name = email.split("@")[0].replace(/[^a-zA-Z0-9]+/g, " ").trim();
-  const parts = name.split(" ").filter(Boolean);
-  const letters = parts.length > 1 ? parts[0][0] + parts[1][0] : name.slice(0, 2);
-  return (letters || "?").toUpperCase();
-}
 
 const STATUS_POLL_MS = 60_000;
 

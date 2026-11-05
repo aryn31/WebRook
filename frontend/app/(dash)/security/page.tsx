@@ -9,6 +9,21 @@ import { PasswordInput } from "@/components/PasswordInput";
 
 const MIN_PASSWORD = 10;
 
+function DeviceIcon({ ua }: { ua: string | null }) {
+  const kind = !ua ? "other" : /iPhone|Android|Mobile/.test(ua) ? "phone" : /Mozilla\//.test(ua) ? "laptop" : "terminal";
+  const paths: Record<string, string> = {
+    phone: "M8 2.5h8a1.5 1.5 0 0 1 1.5 1.5v16a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 20V4A1.5 1.5 0 0 1 8 2.5ZM11 18.5h2",
+    laptop: "M4.5 6A1.5 1.5 0 0 1 6 4.5h12A1.5 1.5 0 0 1 19.5 6v9h-15V6ZM2.5 18.5h19",
+    terminal: "M3.5 5.5h17v13h-17zM7 10l2.5 2L7 14M12 14h4",
+    other: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 8v5M12 16h.01",
+  };
+  return (
+    <span className="device-icon" aria-hidden>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={paths[kind]} /></svg>
+    </span>
+  );
+}
+
 function PasswordCard({ onChanged }: { onChanged: () => void }) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -49,6 +64,7 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
         <h2>Password</h2>
         <span className="muted small">Changing it signs you out everywhere else.</span>
       </div>
+      <div className="security-split">
       <form onSubmit={submit} className="stack security-form">
         <label className="field">
           <span className="field-label">Current password</span>
@@ -90,6 +106,17 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
           </button>
         </div>
       </form>
+      <aside className="security-tips">
+        <div className="security-tips-title">A strong password</div>
+        <ul>
+          <li>Is at least 10 characters. Longer is better.</li>
+          <li>Isn&apos;t used on any other site.</li>
+          <li>Can be a few random words, like <span className="mono">plum-river-candle-orbit</span>.</li>
+          <li>Lives in a password manager, so you don&apos;t have to remember it.</li>
+        </ul>
+        <p className="muted small">Forgot it? Use &quot;Forgot password?&quot; on the log-in page to reset it by email.</p>
+      </aside>
+      </div>
       <ErrorBox error={err} />
       {done !== null && (
         <div className="alert alert-success mt" role="status">
@@ -196,8 +223,11 @@ function SessionsCard({ reloadKey }: { reloadKey: number }) {
               {sessions.map((s) => (
                 <tr key={s.id}>
                   <td>
-                    <span title={s.user_agent ?? undefined}>{describeDevice(s.user_agent)}</span>
-                    {s.current && <span className="badge badge-green security-this">This device</span>}
+                    <span className="person">
+                      <DeviceIcon ua={s.user_agent} />
+                      <span title={s.user_agent ?? undefined}>{describeDevice(s.user_agent)}</span>
+                      {s.current && <span className="badge badge-green security-this">This device</span>}
+                    </span>
                   </td>
                   <td className="mono">{s.ip_address ?? <span className="muted">—</span>}</td>
                   <td className="nowrap">{s.current ? "Now" : relative(s.last_seen_at)}</td>
