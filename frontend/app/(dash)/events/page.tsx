@@ -245,8 +245,7 @@ export default function EventsPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Event ID</th>
-                  <th>Type</th>
+                  <th>Event</th>
                   <th>Created</th>
                   <th>Deliveries</th>
                 </tr>
@@ -254,12 +253,19 @@ export default function EventsPage() {
               <tbody>
                 {items.map((ev) => (
                   <tr key={ev.id} className={`row-click${ev.deliveries.failed > 0 ? " row-failed" : ""}`} onClick={() => router.push(`/events/${ev.id}`)}>
-                    <td className="mono">
-                      <Link href={`/events/${ev.id}`} onClick={(e) => e.stopPropagation()}>
-                        {ev.id}
-                      </Link>
+                    <td>
+                      <div className="ev-cell">
+                        <span className={`ev-icon ${ev.deliveries.failed > 0 ? "ev-icon-bad" : "ev-icon-ok"}`} aria-hidden>
+                          {ev.event_type.split(".")[0].slice(0, 2)}
+                        </span>
+                        <span className="ev-text">
+                          <Link href={`/events/${ev.id}`} className="ev-type mono" onClick={(e) => e.stopPropagation()}>
+                            {ev.event_type}
+                          </Link>
+                          <span className="ev-id mono">{ev.id}</span>
+                        </span>
+                      </div>
                     </td>
-                    <td className="mono">{ev.event_type}</td>
                     <td>
                       <Time iso={ev.created_at} />
                     </td>

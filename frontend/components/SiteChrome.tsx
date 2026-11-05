@@ -2,6 +2,7 @@ import Link from "next/link";
 import { API_PUBLIC_URL } from "@/lib/api";
 import { AuthCta } from "./AuthCta";
 import { Brand } from "./Brand";
+import { ThemeToggle } from "./ThemeToggle";
 
 export const DOCS_URL = `${API_PUBLIC_URL}/docs`;
 
@@ -15,10 +16,12 @@ export function SiteHeader({ active }: { active?: "home" | "platform" }) {
           <Link href="/platform" className={active === "platform" ? "active" : ""} aria-current={active === "platform" ? "page" : undefined}>
             Platform
           </Link>
+          <Link href="/#demo">Live demo</Link>
           <Link href="/#developers">Developers</Link>
           <a href={DOCS_URL} target="_blank" rel="noreferrer">API reference</a>
         </nav>
         <div className="lp-nav-actions">
+          <ThemeToggle className="nav-theme" />
           <AuthCta variant="nav" />
         </div>
       </div>
@@ -40,6 +43,7 @@ export function SiteFooter() {
           <Link href="/privacy">Privacy</Link>
           <Link href="/terms">Terms</Link>
         </nav>
+        <ThemeToggle />
       </div>
     </footer>
   );

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { api, type Delivery, type Stats, type StatsRange, type Usage, type UsageWindow } from "@/lib/api";
+import { api, type Delivery, type EndpointWithHealth, type Stats, type StatsRange, type Usage, type UsageWindow } from "@/lib/api";
 import { formatCountdown, formatDuration, formatNumber, INSPECTED_KEY, ONBOARDING_DISMISSED_KEY } from "@/lib/format";
 import { SeriesChart } from "@/components/SeriesChart";
 import { DeliveryExplanation } from "@/components/DeliveryTable";
 import { Empty, ErrorBox, Loading, PageHeader, Time } from "@/components/ui";
+import { useMe } from "@/components/MeContext";
 
 const RANGES: { value: StatsRange; label: string }[] = [
   { value: "24h", label: "24h" },
@@ -125,7 +126,94 @@ function UsageCard({ usage }: { usage: Usage }) {
   );
 }
 
+function greeting(): string {
+  const h = new Date().getHours();
+  return h < 5 ? "Working late" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+}
+
+/** Success rate as a ring that fills in. */
+function Ring({ pct, tone }: { pct: number | null; tone: string }) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => setShown(pct ?? 0));
+    return () => window.cancelAnimationFrame(id);
+  }, [pct]);
+  return (
+    <div className={`ring ring-${tone}`}>
+      <svg viewBox="0 0 120 120" aria-hidden>
+        <circle cx="60" cy="60" r={r} className="ring-track" />
+        <circle cx="60" cy="60" r={r} className="ring-value" strokeDasharray={c}
+          strokeDashoffset={c * (1 - shown / 100)} transform="rotate(-90 60 60)" />
+      </svg>
+      <div className="ring-label">
+        <span className="ring-num">{pct == null ? "—" : `${pct}%`}</span>
+        <span className="ring-sub">success</span>
+      </div>
+    </div>
+  );
+}
+
+function verdict(rate: number | null, failed: number, retrying: number): { tone: string; title: string; body: string } {
+  if (rate == null) {
+    return retrying > 0
+      ? { tone: "retrying", title: "Deliveries in progress", body: "Nothing has finished yet in this range." }
+      : { tone: "idle", title: "Quiet so far", body: "No deliveries in this range yet. Send an event to see it here." };
+  }
+  if (rate >= 99) return { tone: "ok", title: "Everything's arriving", body: "Your endpoints are accepting what you send." };
+  if (rate >= 90) return { tone: "ok", title: "Mostly smooth", body: `${formatNumber(failed)} failed deliver${failed === 1 ? "y" : "ies"} worth a look.` };
+  if (rate >= 60) return { tone: "retrying", title: "Some endpoints are struggling", body: "Check the failing endpoints below, then replay what failed." };
+  return { tone: "failed", title: "Most deliveries are failing", body: "At least one endpoint is rejecting requests. Start with the list below." };
+}
+
+const HEALTH_LABEL: Record<EndpointWithHealth["health"]["state"], string> = {
+  healthy: "Healthy", degraded: "Degraded", failing: "Failing", idle: "No traffic",
+};
+
+function EndpointsHealth({ endpoints }: { endpoints: EndpointWithHealth[] }) {
+  const order = { failing: 0, degraded: 1, healthy: 2, idle: 3 };
+  const list = [...endpoints].filter((e) => e.enabled).sort((a, b) => order[a.health.state] - order[b.health.state]).slice(0, 6);
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>Endpoint health</h2>
+        <Link href="/endpoints" className="small">All endpoints →</Link>
+      </div>
+      {list.length === 0 ? (
+        <Empty title="No endpoints yet">
+          <Link href="/endpoints" className="btn btn-sm btn-primary">Add your first endpoint</Link>
+        </Empty>
+      ) : (
+        <ul className="eph">
+          {list.map((e) => {
+            const pct = e.health.success_rate == null ? null : Math.round(e.health.success_rate * 100);
+            return (
+              <li key={e.id}>
+                <Link href={`/endpoints/${e.id}`} className={`eph-row eph-${e.health.state}`}>
+                  <span className="eph-dot" aria-hidden />
+                  <span className="eph-main">
+                    <span className="eph-name">{e.description || e.url}</span>
+                    <span className="eph-url mono">{e.url}</span>
+                  </span>
+                  <span className="eph-bar" aria-hidden><span style={{ width: `${pct ?? 0}%` }} /></span>
+                  <span className="eph-pct">{pct == null ? "—" : `${pct}%`}</span>
+                  <span className="eph-state">{HEALTH_LABEL[e.health.state]}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function OverviewPage() {
+  const { me } = useMe();
+  const [endpoints, setEndpoints] = useState<EndpointWithHealth[] | null>(null);
+  const [hello, setHello] = useState("Welcome back");
+  useEffect(() => setHello(greeting()), []);
   const [range, setRange] = useState<StatsRange>("24h");
   const [usage, setUsage] = useState<Usage | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -158,6 +246,9 @@ export default function OverviewPage() {
 
   useEffect(() => {
     void loadFailed();
+    api.listEndpoints({ limit: 50 }).then((r) => setEndpoints(r.data)).catch(() => {
+      /* optional card; hidden on errors */
+    });
     api.usage().then(setUsage).catch(() => {
       /* optional card; hidden on errors */
     });
@@ -195,33 +286,23 @@ export default function OverviewPage() {
   const s = stats?.deliveries_by_status;
   const successRate =
     s && s.delivered + s.failed > 0 ? Math.round((s.delivered / (s.delivered + s.failed)) * 1000) / 10 : null;
-  const loading = statsErr ? "—" : "…";
-  const num = (n: number | undefined) => (n == null ? loading : formatNumber(n));
-  const tiles: { label: string; value: string; cls?: string; href?: string; title?: string }[] = [
-    { label: "Events", value: num(stats?.events_total), href: "/events" },
-    { label: "Delivered", value: num(s?.delivered), cls: "delivered", href: "/deliveries?status=delivered" },
-    { label: "Retrying", value: num(s?.retrying), cls: "retrying", href: "/deliveries?status=retrying" },
-    { label: "Failed", value: num(s?.failed), cls: "failed", href: "/deliveries?status=failed" },
-    { label: "Pending", value: num(s ? s.pending + s.processing : undefined), cls: "pending", href: "/deliveries?status=pending" },
-    {
-      label: "Success rate",
-      value: !stats ? loading : successRate == null ? "—" : `${successRate}%`,
-      title: "Delivered ÷ (delivered + failed). Deliveries still retrying aren't counted yet.",
-    },
-    {
-      label: "p95 response",
-      value: !stats ? loading : stats.latency_ms ? formatDuration(stats.latency_ms.p95) : "—",
-      title: stats?.latency_ms
-        ? `95% of attempts got a response within this time. Median: ${formatDuration(stats.latency_ms.p50)}.`
-        : "No delivery attempts in this range.",
-    },
+  const pending = s ? s.pending + s.processing : 0;
+  const total = s ? s.delivered + s.retrying + s.failed + pending : 0;
+  const v = verdict(successRate, s?.failed ?? 0, s?.retrying ?? 0);
+  const num = (n: number | undefined) => (n == null ? (statsErr ? "—" : "…") : formatNumber(n));
+  const counts: { label: string; value: string; cls: string; href: string; n: number }[] = [
+    { label: "Delivered", value: num(s?.delivered), cls: "delivered", href: "/deliveries?status=delivered", n: s?.delivered ?? 0 },
+    { label: "Retrying", value: num(s?.retrying), cls: "retrying", href: "/deliveries?status=retrying", n: s?.retrying ?? 0 },
+    { label: "Failed", value: num(s?.failed), cls: "failed", href: "/deliveries?status=failed", n: s?.failed ?? 0 },
+    { label: "Pending", value: num(s ? pending : undefined), cls: "pending", href: "/deliveries?status=pending", n: pending },
   ];
+  const name = me?.user.email.split("@")[0];
 
   return (
     <div className="page">
       <PageHeader
-        title="Overview"
-        sub="Activity across all your endpoints"
+        title={<>{hello}{name ? <>, <em className="greet-name">{name}</em></> : null}</>}
+        sub="Here's how your webhooks are doing."
         actions={
           <div className="segmented" role="tablist" aria-label="Time range">
             {RANGES.map((r) => (
@@ -244,29 +325,46 @@ export default function OverviewPage() {
 
       <ErrorBox error={statsErr} onRetry={() => loadStats(range)} />
 
-      <div className="tiles">
-        {tiles.map((t) => {
-          const body = (
-            <>
-              <div className="tile-label">
-                {t.cls && <span className={`pill-dot dot-${t.cls}`} aria-hidden />} {t.label}
-              </div>
-              <div className="tile-value">{t.value}</div>
-            </>
-          );
-          return t.href ? (
-            <Link key={t.label} href={t.href} className={`tile${t.cls ? ` tile-${t.cls}` : ""}`} title={t.title}>
-              {body}
-            </Link>
-          ) : (
-            <div key={t.label} className="tile tile-static" title={t.title}>
-              {body}
-            </div>
-          );
-        })}
+      <section className={`card hero-card hero-${v.tone}`}>
+        <Ring pct={stats ? successRate : null} tone={v.tone} />
+        <div className="hero-main">
+          <div className="hero-verdict">
+            <span className="hero-verdict-dot" aria-hidden />
+            {stats ? v.title : statsErr ? "Couldn't load activity" : "Loading activity…"}
+          </div>
+          <p className="hero-body">{stats ? v.body : "\u00a0"}</p>
+          <div className="hero-split" aria-hidden>
+            {total > 0 && counts.map((c) => c.n > 0 && (
+              <span key={c.cls} className={`split-${c.cls}`} style={{ flexGrow: c.n }} />
+            ))}
+          </div>
+          <div className="hero-counts">
+            {counts.map((c) => (
+              <Link key={c.cls} href={c.href} className={`hero-count count-${c.cls}`}>
+                <span className="hero-count-label"><span className={`pill-dot dot-${c.cls}`} aria-hidden /> {c.label}</span>
+                <span className="hero-count-value">{c.value}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+        <div className="hero-side">
+          <Link href="/events" className="hero-stat">
+            <span className="hero-stat-label">Events</span>
+            <span className="hero-stat-value">{num(stats?.events_total)}</span>
+          </Link>
+          <div className="hero-stat"
+            title={stats?.latency_ms ? `95% of attempts got a response within this time. Median: ${formatDuration(stats.latency_ms.p50)}.` : "No delivery attempts in this range."}>
+            <span className="hero-stat-label">p95 response</span>
+            <span className="hero-stat-value">{!stats ? num(undefined) : stats.latency_ms ? formatDuration(stats.latency_ms.p95) : "—"}</span>
+          </div>
+        </div>
+      </section>
+
+      <div className="overview-grid">
+        {endpoints && <EndpointsHealth endpoints={endpoints} />}
+        {usage && <UsageCard usage={usage} />}
       </div>
 
-      {usage && <UsageCard usage={usage} />}
 
       <section className="card">
         <div className="card-head">
@@ -286,7 +384,7 @@ export default function OverviewPage() {
         <ErrorBox error={failedErr} onRetry={loadFailed} />
         {!failed && !failedErr && <Loading />}
         {failed && failed.length === 0 && (
-          <Empty title="No failed deliveries">Everything that finished was delivered. Nice.</Empty>
+          <Empty good title="No failed deliveries">Everything that finished was delivered. Nice.</Empty>
         )}
         {failed && failed.length > 0 && (
           <ul className="list">

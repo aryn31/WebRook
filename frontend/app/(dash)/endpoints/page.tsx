@@ -193,7 +193,7 @@ export default function EndpointsPage() {
         </section>
       )}
 
-      <section className="card">
+      <section className={items && items.length > 0 ? "" : "card"}>
         <ErrorBox error={loadErr} onRetry={() => load(null)} />
         {!items && !loadErr && <Loading />}
         {items && items.length === 0 && (
@@ -207,43 +207,31 @@ export default function EndpointsPage() {
           </Empty>
         )}
         {items && items.length > 0 && (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>URL</th>
-                  <th>Event types</th>
-                  <th>Health (24h)</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((e) => (
-                  <tr key={e.id} className="row-click" onClick={() => router.push(`/endpoints/${e.id}`)}>
-                    <td className="url-cell">
-                      <Link href={`/endpoints/${e.id}`} className="mono" onClick={(ev) => ev.stopPropagation()}>
-                        {e.url}
-                      </Link>
-                      {e.description && <div className="muted small">{e.description}</div>}
-                    </td>
-                    <td>
-                      <EventTypeList types={e.event_types} />
-                    </td>
-                    <td className="health-cell">
-                      <HealthBadge health={e.health} />
-                    </td>
-                    <td>
+          <ul className="ep-grid">
+            {items.map((e) => {
+              const pct = e.health.success_rate == null ? null : Math.round(e.health.success_rate * 100);
+              return (
+                <li key={e.id}>
+                  <Link href={`/endpoints/${e.id}`} className={`ep-card ep-${e.enabled ? e.health.state : "off"}`}>
+                    <div className="ep-card-top">
+                      <span className="ep-card-dot" aria-hidden />
+                      <span className="ep-card-name">{e.description || new URL(e.url).host}</span>
                       {e.enabled ? <span className="badge badge-green">Enabled</span> : <span className="badge badge-grey">Disabled</span>}
-                    </td>
-                    <td>
-                      <Time iso={e.created_at} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                    <div className="ep-card-url mono" title={e.url}>{e.url}</div>
+                    <div className="ep-card-health">
+                      <span className="ep-card-bar" aria-hidden><span style={{ width: `${pct ?? 0}%` }} /></span>
+                      <HealthBadge health={e.health} />
+                    </div>
+                    <div className="ep-card-foot">
+                      <EventTypeList types={e.event_types} />
+                      <span className="muted small">Added <Time iso={e.created_at} /></span>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         )}
         {cursor && (
           <div className="load-more">

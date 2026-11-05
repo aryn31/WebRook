@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import "./globals.css";
+import { THEME_SCRIPT } from "@/components/ThemeToggle";
 
 // Fonts are downloaded at build time and served from this site (no requests to Google at runtime).
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
@@ -29,7 +30,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${geist.variable} ${geistMono.variable} ${serif.variable}`}>
+    // suppressHydrationWarning: the theme script may set data-theme before React loads.
+    <html lang="en" className={`${geist.variable} ${geistMono.variable} ${serif.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

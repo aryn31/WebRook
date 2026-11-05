@@ -1,6 +1,7 @@
 import { Brand } from "@/components/Brand";
 import { FlowDiagram } from "@/components/FlowDiagram";
 import { FreshOnBack } from "@/components/FreshOnBack";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -23,6 +24,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </ul>
       </aside>
       <main className="auth-main">
+        <ThemeToggle className="auth-theme" />
         <Brand className="auth-main-brand" />
         <div className="auth-card">{children}</div>
       </main>

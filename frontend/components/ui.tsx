@@ -135,17 +135,31 @@ export function ErrorBox({ error, onRetry }: { error: unknown; onRetry?: () => v
   );
 }
 
-export function Loading({ label = "Loading…" }: { label?: string }) {
+/** Shimmering placeholder rows while data loads. */
+export function Loading({ label = "Loading…", rows = 3 }: { label?: string; rows?: number }) {
   return (
-    <div className="loading" role="status">
-      <span className="spinner" aria-hidden /> {label}
+    <div className="skeleton" role="status" aria-label={label}>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="skeleton-row" style={{ animationDelay: `${i * 90}ms` }}>
+          <span className="skeleton-bar" style={{ width: `${[38, 62, 48, 55][i % 4]}%` }} />
+          <span className="skeleton-bar skeleton-bar-sm" />
+        </div>
+      ))}
     </div>
   );
 }
 
-export function Empty({ title, children }: { title: string; children?: ReactNode }) {
+/** Shown when a list has nothing in it. `good` is for empty-is-good lists, like failures. */
+export function Empty({ title, children, good }: { title: string; children?: ReactNode; good?: boolean }) {
   return (
-    <div className="empty">
+    <div className={`empty${good ? " empty-good" : ""}`}>
+      <span className="empty-icon" aria-hidden>
+        {good ? (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+        ) : (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 13.5 6 5.5h12l2.5 8M3.5 13.5V18a1.5 1.5 0 0 0 1.5 1.5h14a1.5 1.5 0 0 0 1.5-1.5v-4.5M3.5 13.5h5l1.2 2.2h4.6l1.2-2.2h5" /></svg>
+        )}
+      </span>
       <div className="empty-title">{title}</div>
       {children && <div className="empty-body">{children}</div>}
     </div>

@@ -31,6 +31,34 @@ Each entry covers: what was built or changed, decisions made, how it was checked
     logged-out dashboard is never shown.
   Checked in headless Chrome: landing → log in → Back lands on the landing page; opening `/login` or `/register`
   while logged in goes to Overview; Back after logging out stays on the log-in page.
+- **Home page redesign** (to make visitors want to try it):
+  - **Live demo** (`components/landing/Playground.tsx`): a pretend HookFlow in the browser, sped up. Send
+    events, click an endpoint to take it down, watch 503s retry with countdowns, fail after 4 attempts, then
+    replay. Autoplays a short story (billing goes down and recovers) until the visitor clicks anything; only runs
+    while on screen. Nothing talks to the API.
+  - New sections: a facts strip, a feature grid with small visuals (retries, signatures, replay, endpoint health,
+    teams), "Live in three steps", and an FAQ. Hero gets a "Free to start · No card · No SDK" line and a link to
+    the demo; the top bar gets "Live demo". All claims match current features and default limits.
+  - Sections fade in on scroll (`components/landing/Reveal.tsx`; off with reduced motion, visible without JS).
+  - Checked: desktop, phone and light mode screenshots; drove the demo in headless Chrome (down → retries →
+    failed → back up → replay → delivered).
+- **Dashboard redesign** (the logged-in pages):
+  - Overview: greeting with the person's name; a summary card with a success-rate ring, a plain-English verdict
+    ("Everything's arriving" / "Most deliveries are failing" / "Quiet so far"), a bar showing the delivery mix and
+    linked counts; an "Endpoint health" list (worst first) next to Usage.
+  - Endpoints page: cards instead of a table, each with a coloured edge, health bar, last error and event types.
+  - Events page: event type first with the ID underneath and a small coloured badge; failures marked by a red
+    edge instead of tinting whole rows.
+  - Everywhere: sidebar grouped into Monitor / Configure / Account, user chip with initials and role; shimmer
+    placeholders instead of "Loading…"; empty states with an icon (green tick when empty is good); soft lime
+    glow at the top of each page; row hover in tables.
+  - Checked: screenshots of a busy account and a brand-new one, light and dark mode, phone width.
+- **Theme switch (Light / Dark / System):** in the sidebar, the site header and footer, and the corner of the
+  log-in pages (`components/ThemeToggle.tsx`). Saved in the browser (`hf-theme`); a tiny script in `<head>`
+  applies it before the page draws, so there's no flash. Dark styles in `globals.css` now apply when the system
+  is dark and Light wasn't picked, or when Dark was picked. The live demo and photo panels stay dark on purpose.
+  Checked in headless Chrome: picking Light on a dark system, the choice carrying to other pages, Dark on a light
+  system, and back to System.
 - No new settings, so deploying is just commit and push.
 
 ## 2026-11-04 — Milestone 4 deployed

@@ -7,17 +7,40 @@ import { api, errorMessage, type SystemHealth } from "@/lib/api";
 import { Brand } from "./Brand";
 import { IconAudit, IconDeliveries, IconEndpoints, IconEvents, IconHome, IconKey, IconLogout, IconOverview, IconShield, IconTeam } from "./Icons";
 import { accountLabel, ROLE_LABEL, useMe } from "./MeContext";
+import { ThemeToggle } from "./ThemeToggle";
 
 const NAV = [
-  { href: "/overview", label: "Overview", Icon: IconOverview },
-  { href: "/events", label: "Events", Icon: IconEvents },
-  { href: "/deliveries", label: "Deliveries", Icon: IconDeliveries },
-  { href: "/endpoints", label: "Endpoints", Icon: IconEndpoints },
-  { href: "/api-keys", label: "API keys", Icon: IconKey },
-  { href: "/team", label: "Team", Icon: IconTeam },
-  { href: "/audit-log", label: "Audit log", Icon: IconAudit },
-  { href: "/security", label: "Security", Icon: IconShield },
+  {
+    group: "Monitor",
+    items: [
+      { href: "/overview", label: "Overview", Icon: IconOverview },
+      { href: "/events", label: "Events", Icon: IconEvents },
+      { href: "/deliveries", label: "Deliveries", Icon: IconDeliveries },
+    ],
+  },
+  {
+    group: "Configure",
+    items: [
+      { href: "/endpoints", label: "Endpoints", Icon: IconEndpoints },
+      { href: "/api-keys", label: "API keys", Icon: IconKey },
+    ],
+  },
+  {
+    group: "Account",
+    items: [
+      { href: "/team", label: "Team", Icon: IconTeam },
+      { href: "/audit-log", label: "Audit log", Icon: IconAudit },
+      { href: "/security", label: "Security", Icon: IconShield },
+    ],
+  },
 ];
+
+function initials(email: string): string {
+  const name = email.split("@")[0].replace(/[^a-zA-Z0-9]+/g, " ").trim();
+  const parts = name.split(" ").filter(Boolean);
+  const letters = parts.length > 1 ? parts[0][0] + parts[1][0] : name.slice(0, 2);
+  return (letters || "?").toUpperCase();
+}
 
 const STATUS_POLL_MS = 60_000;
 
@@ -76,8 +99,12 @@ function AccountSwitcher() {
 
   if (me.accounts.length <= 1) {
     return (
-      <div className="user-email" title={me.user.email}>
-        {me.user.email}
+      <div className="user-chip" title={me.user.email}>
+        <span className="user-avatar" aria-hidden>{initials(me.user.email)}</span>
+        <span className="user-chip-text">
+          <span className="user-email">{me.user.email}</span>
+          <span className="user-role">{ROLE_LABEL[me.account.role]}</span>
+        </span>
       </div>
     );
   }
@@ -145,11 +172,16 @@ export function Sidebar() {
     <aside className="sidebar">
       <Brand href="/overview" className="sidebar-brand" />
       <nav className="nav">
-        {NAV.map((n) => (
-          <Link key={n.href} href={n.href} className={`nav-link${isActive(n.href) ? " active" : ""}`}>
-            <n.Icon className="nav-icon" />
-            {n.label}
-          </Link>
+        {NAV.map((g) => (
+          <div key={g.group} className="nav-group">
+            <div className="nav-group-label">{g.group}</div>
+            {g.items.map((n) => (
+              <Link key={n.href} href={n.href} className={`nav-link${isActive(n.href) ? " active" : ""}`}>
+                <n.Icon className="nav-icon" />
+                {n.label}
+              </Link>
+            ))}
+          </div>
         ))}
       </nav>
       <div className="sidebar-foot">
@@ -159,6 +191,7 @@ export function Sidebar() {
         </Link>
         <SystemStatus />
         <AccountSwitcher />
+        <ThemeToggle className="sidebar-theme" />
         <button type="button" className="btn btn-sm btn-ghost logout" onClick={logout} disabled={loggingOut}>
           <IconLogout size={15} /> {loggingOut ? "Logging out…" : "Log out"}
         </button>
