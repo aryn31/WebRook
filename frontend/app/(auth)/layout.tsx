@@ -1,9 +1,11 @@
 import { Brand } from "@/components/Brand";
 import { FlowDiagram } from "@/components/FlowDiagram";
+import { FreshOnBack } from "@/components/FreshOnBack";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="auth-split">
+      <FreshOnBack />
       <aside className="auth-aside" aria-hidden>
         <Brand className="auth-aside-brand" />
         <div className="auth-aside-body">

@@ -113,6 +113,22 @@ class VerificationSentOut(BaseModel):
     resend_after_seconds: int
 
 
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordOut(BaseModel):
+    # Always the same answer, whether or not an account exists, so the form can't be used to find accounts.
+    message: str
+    resend_after_seconds: int
+
+
+class ResetPasswordIn(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=1, max_length=16)
+    new_password: str = Field(min_length=10, max_length=256)
+
+
 class SwitchAccountIn(BaseModel):
     account_id: str = Field(max_length=32)
 

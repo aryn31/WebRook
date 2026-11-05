@@ -1008,3 +1008,16 @@ tr.row-click:has(+ .row-explain) td { border-bottom: 0; padding-bottom: 4px; }
 .legal p, .legal li { color: var(--text-2); }
 .legal ul { padding-left: 20px; margin: 8px 0; }
 .legal li { margin: 4px 0; }
+
+/* Password field with show/hide */
+.password-input { position: relative; display: block; }
+.password-input .input { padding-right: 42px; }
+.password-toggle {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  width: 32px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer;
+}
+.password-toggle:hover { color: var(--text); background: var(--surface-2); }
+.password-toggle:focus-visible { outline: 2px solid var(--text); outline-offset: 0; }
+.field-label-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.field-label-row a { font-size: 12.5px; }

@@ -17,6 +17,7 @@ from app.config import get_settings
 from app.models import EmailCode, User
 
 VERIFY_EMAIL = "verify_email"
+RESET_PASSWORD = "reset_password"
 
 
 def _hash(user_id: str, purpose: str, code: str) -> str:
@@ -87,10 +88,18 @@ def check(db: Session, user_id: str, code: str, purpose: str = VERIFY_EMAIL) -> 
     return False, left
 
 
+def _send(template, to: str, code: str) -> None:
+    s = get_settings()
+    subject, text, html = template(code=code, email=to, minutes=s.email_code_ttl_minutes,
+                                   app_url=s.app_url.rstrip("/"))
+    mailer.send(to, subject, text, html)
+
+
 def send_verification(to: str, code: str) -> None:
     """Raises mailer.MailError if it couldn't be sent."""
-    s = get_settings()
-    subject, text, html = email_templates.verification_code(
-        code=code, email=to, minutes=s.email_code_ttl_minutes, app_url=s.app_url.rstrip("/")
-    )
-    mailer.send(to, subject, text, html)
+    _send(email_templates.verification_code, to, code)
+
+
+def send_password_reset(to: str, code: str) -> None:
+    """Raises mailer.MailError if it couldn't be sent."""
+    _send(email_templates.password_reset_code, to, code)

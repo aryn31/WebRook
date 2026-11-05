@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, describeDetails } from "@/lib/api";
+import { PasswordInput } from "@/components/PasswordInput";
+import { leaveTo, useLeaveIfSignedIn } from "@/lib/navigation";
 
 function safeNext(): string {
   if (typeof window === "undefined") return "/overview";
@@ -34,7 +36,8 @@ function authErrorText(err: unknown, mode: "login" | "register"): { text: string
   return { text: "Something went wrong. Please try again.", details: [] };
 }
 
-export function AuthForm({ mode }: { mode: "login" | "register" }) {
+export function AuthForm({ mode, hasSession = false }: { mode: "login" | "register"; hasSession?: boolean }) {
+  const checking = useLeaveIfSignedIn(hasSession, safeNext);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -62,20 +65,22 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       const res =
         mode === "login" ? await api.login(email.trim(), password) : await api.register(email.trim(), password);
       const next = safeNext();
-      // Full navigation so middleware sees the fresh cookie.
+      // Full navigation so middleware sees the fresh cookie. Replace, so Back doesn't return to this form.
       if (res.user.email_verified) {
-        window.location.assign(next);
+        leaveTo(next);
       } else {
         const failed = "verification_email_sent" in res && !res.verification_email_sent;
         const qs = new URLSearchParams({ next });
         if (failed) qs.set("send_failed", "1");
-        window.location.assign(`/verify-email?${qs}`);
+        leaveTo(`/verify-email?${qs}`);
       }
     } catch (err) {
       setError({ ...authErrorText(err, mode), code: err instanceof ApiError ? err.code : undefined });
       setBusy(false);
     }
   }
+
+  if (checking) return <p className="muted center">Taking you to your dashboard…</p>;
 
   return (
     <form onSubmit={submit} className="stack" noValidate>
@@ -99,11 +104,13 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           autoFocus
         />
       </label>
-      <label className="field">
-        <span className="field-label">Password</span>
-        <input
-          type="password"
-          className="input"
+      <div className="field">
+        <div className="field-label-row">
+          <label htmlFor="auth-password" className="field-label">Password</label>
+          {mode === "login" && <Link href="/forgot-password">Forgot password?</Link>}
+        </div>
+        <PasswordInput
+          id="auth-password"
           autoComplete={mode === "login" ? "current-password" : "new-password"}
           required
           minLength={mode === "register" ? 10 : undefined}
@@ -115,7 +122,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             At least 10 characters{pwTooShort ? ` (${password.length}/10)` : ""}.
           </span>
         )}
-      </label>
+      </div>
       {error && (
         <div className="alert alert-error" role="alert">
           <div>

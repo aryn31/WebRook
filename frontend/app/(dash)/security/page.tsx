@@ -5,6 +5,7 @@ import { api, ApiError, type LoginSession } from "@/lib/api";
 import { describeDevice, relative } from "@/lib/format";
 import { useMe } from "@/components/MeContext";
 import { ConfirmButton, ErrorBox, Loading, PageHeader, Time } from "@/components/ui";
+import { PasswordInput } from "@/components/PasswordInput";
 
 const MIN_PASSWORD = 10;
 
@@ -51,9 +52,7 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
       <form onSubmit={submit} className="stack security-form">
         <label className="field">
           <span className="field-label">Current password</span>
-          <input
-            type="password"
-            className="input"
+          <PasswordInput
             autoComplete="current-password"
             value={current}
             maxLength={256}
@@ -63,9 +62,7 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
         </label>
         <label className="field">
           <span className="field-label">New password</span>
-          <input
-            type="password"
-            className="input"
+          <PasswordInput
             autoComplete="new-password"
             value={next}
             maxLength={256}
@@ -78,9 +75,7 @@ function PasswordCard({ onChanged }: { onChanged: () => void }) {
         </label>
         <label className="field">
           <span className="field-label">Confirm new password</span>
-          <input
-            type="password"
-            className="input"
+          <PasswordInput
             autoComplete="new-password"
             value={confirm}
             maxLength={256}
@@ -133,7 +128,7 @@ function SessionsCard({ reloadKey }: { reloadKey: number }) {
     try {
       await api.signOutSession(s.id);
       if (s.current) {
-        window.location.assign("/login");
+        window.location.replace("/login");
         return;
       }
       setSessions((prev) => (prev ?? []).filter((x) => x.id !== s.id));

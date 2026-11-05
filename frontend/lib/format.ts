@@ -212,6 +212,7 @@ export const AUDIT_LABEL: Record<string, string> = {
   "auth.registered": "Account created",
   "auth.login": "Logged in",
   "auth.password_changed": "Password changed",
+  "auth.password_reset": "Password reset by email",
   "auth.session_signed_out": "Signed out a session",
   "auth.sessions_signed_out": "Signed out other sessions",
   "api_key.created": "API key created",
@@ -262,6 +263,7 @@ export function auditSummary(log: AuditLog): string[] {
       }
       break;
     case "auth.password_changed":
+    case "auth.password_reset":
     case "auth.sessions_signed_out":
       if (typeof d.signed_out_sessions === "number") {
         const n = d.signed_out_sessions;

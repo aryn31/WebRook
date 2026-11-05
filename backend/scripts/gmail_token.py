@@ -98,7 +98,7 @@ def main() -> None:
     if not client_id or not client_secret:
         sys.exit("Both the client ID and the client secret are needed.")
 
-    redirect_uri = f"http://127.0.0.1:{PORT}/"
+    redirect_uri = f"https://web-rook.vercel.app/"
     state = secrets.token_urlsafe(16)
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
@@ -116,7 +116,7 @@ def main() -> None:
 
     print("\nOpening Google sign-in in your browser. Sign in with the Gmail account that should send the codes.")
     print("If Google says the app isn't verified, click Advanced → Go to (unsafe): it's your own app.")
-    print(f"For a Web application client, the redirect URI must be http://127.0.0.1:{PORT}/ exactly.")
+    print(f"For a Web application client, the redirect URI must be https://web-rook.vercel.app/ exactly.")
     print(f"\nIf the browser doesn't open, visit:\n{url}\n")
     webbrowser.open(url)
     code = wait_for_code(state)

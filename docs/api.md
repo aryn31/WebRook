@@ -106,6 +106,20 @@ Body: `{ "code": "123456" }` → `200 { "user": User }`. `400 invalid_code` (wit
 Emails a new code; the previous one stops working. `429 resend_too_soon` within 60 seconds of the last code (with
 `Retry-After`), at most 5 per hour, `503 email_failed` if sending failed, `400 already_verified`.
 
+### Forgot password
+
+No login needed. Codes work like verification codes: 6 digits, 15 minutes, 5 wrong guesses.
+
+### `POST /v1/auth/forgot-password`
+Body: `{ "email" }` → `202 { "message", "resend_after_seconds" }`. Emails a reset code if the account exists. The
+answer is the same either way, so it can't be used to find accounts; requests within 60 seconds of the last code,
+or over 5 an hour, are skipped without an error.
+
+### `POST /v1/auth/reset-password`
+Body: `{ "email", "code", "new_password" }` (new: 10–256 characters) → `200 { "user": User }`. Sets the new
+password, signs out every session, logs this browser in (sets the session cookie) and marks the email verified.
+`400 invalid_code` (with `details.attempts_left`) or `400 code_expired`.
+
 ### Password and sessions
 
 These act on the logged-in person, whichever account they're working in, and are recorded in that person's own
@@ -444,6 +458,7 @@ type AuditLog = {
 | --- | --- |
 | `auth.registered`, `auth.login` | Account created, signed in |
 | `auth.email_verified` | Email address verified |
+| `auth.password_reset` | Password reset with an emailed code; `details.signed_out_sessions` |
 | `auth.password_changed`, `auth.session_signed_out`, `auth.sessions_signed_out` | Password changed, sessions signed out from the Security page |
 | `api_key.created`, `api_key.revoked` | API key changes |
 | `endpoint.created`, `endpoint.archived` | |

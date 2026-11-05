@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Request, Response
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -14,12 +14,15 @@ from app.permissions import API_SCOPES, SESSION_ONLY
 from app.schemas import (
     AccountOut,
     Credentials,
+    ForgotPasswordIn,
+    ForgotPasswordOut,
     ListOf,
     MeOut,
     PasswordChangeIn,
     PasswordChangeOut,
     RegisterIn,
     RegisterOut,
+    ResetPasswordIn,
     SessionOut,
     SignedOutOut,
     SwitchAccountIn,
@@ -112,6 +115,14 @@ def _try_send(email: str, code: str) -> bool:
         return False
 
 
+def _code_error(attempts_left: int | None) -> ApiError:
+    if attempts_left is None:
+        return ApiError(400, "This code has expired or been used too many times. Send a new one.",
+                        code="code_expired")
+    return ApiError(400, f"That code isn't right. {attempts_left} attempt{'s' if attempts_left != 1 else ''} left.",
+                    code="invalid_code", details={"attempts_left": attempts_left})
+
+
 @router.post("/verify-email", response_model=UserEnvelope)
 def verify_email(body: VerifyEmailIn, principal: SessionPrincipal, db: DB) -> dict:
     """Enter the code from the verification email. Unlocks the dashboard."""
@@ -122,11 +133,7 @@ def verify_email(body: VerifyEmailIn, principal: SessionPrincipal, db: DB) -> di
     ok, left = emailcodes.check(db, me.id, body.code)
     if not ok:
         db.commit()  # keep the attempt count
-        if left is None:
-            raise ApiError(400, "This code has expired or been used too many times. Send a new one.",
-                           code="code_expired")
-        raise ApiError(400, f"That code isn't right. {left} attempt{'s' if left != 1 else ''} left.",
-                       code="invalid_code", details={"attempts_left": left})
+        raise _code_error(left)
     me.email_verified_at = datetime.now(UTC)
     audit.record(db, _personal(principal), "auth.email_verified", "user", me.id)
     db.commit()
@@ -152,6 +159,74 @@ def resend_verification(principal: SessionPrincipal, db: DB) -> dict:
     if not _try_send(me.email, code):
         raise ApiError(503, "We couldn't send the email. Try again in a minute.", code="email_failed")
     return {"sent_to": me.email, "resend_after_seconds": s.email_code_resend_seconds}
+
+
+# --- Forgot password ------------------------------------------------------------
+# 1. POST /forgot-password emails a 6-digit code (if the account exists).
+# 2. POST /reset-password with the email, the code and a new password. Every session is signed out, and this
+#    browser is logged in with the new password.
+
+FORGOT_ANSWER = "If an account exists for this email, we've sent it a code to reset the password."
+
+
+def _send_reset_quietly(email: str, code: str) -> None:
+    try:
+        emailcodes.send_password_reset(email, code)
+    except mailer.MailError:
+        pass  # already logged by the mailer; the person can ask for another code
+
+
+@router.post("/forgot-password", status_code=202, response_model=ForgotPasswordOut)
+def forgot_password(body: ForgotPasswordIn, request: Request, background: BackgroundTasks, db: DB) -> dict:
+    """Email a password reset code. The answer is the same whether or not the account exists."""
+    s = get_settings()
+    email = body.email.lower()
+    _limit(request, "forgot", email)
+    answer = {"message": FORGOT_ANSWER, "resend_after_seconds": s.email_code_resend_seconds}
+    user = db.scalar(select(User).where(func.lower(User.email) == email))
+    if user is None:
+        return answer
+    # Too soon or too many: skip quietly. An error here would show that the account exists.
+    last = emailcodes.last_sent_at(db, user.id, emailcodes.RESET_PASSWORD)
+    if last is not None and (datetime.now(UTC) - last).total_seconds() < s.email_code_resend_seconds:
+        return answer
+    usage = ratelimit.hit(f"auth:reset-send:user:{user.id}", s.email_codes_per_hour, window_seconds=3600)
+    if usage is not None and usage.exceeded:
+        return answer
+    code = emailcodes.issue(db, user, emailcodes.RESET_PASSWORD)
+    db.commit()
+    # Sent after the response, so the answer takes as long whether or not the account exists.
+    background.add_task(_send_reset_quietly, user.email, code)
+    return answer
+
+
+@router.post("/reset-password", response_model=UserEnvelope)
+def reset_password(body: ResetPasswordIn, request: Request, response: Response, db: DB) -> dict:
+    """Set a new password with the emailed code. Signs out every session and logs this browser in."""
+    email = body.email.lower()
+    _limit(request, "reset", email)
+    user = db.scalar(select(User).where(func.lower(User.email) == email))
+    if user is None:
+        raise _code_error(None)
+    ok, left = emailcodes.check(db, user.id, body.code, emailcodes.RESET_PASSWORD)
+    if not ok:
+        db.commit()  # keep the attempt count
+        raise _code_error(left)
+    now = datetime.now(UTC)
+    user.password_hash = hash_password(body.new_password)
+    if user.email_verified_at is None:
+        user.email_verified_at = now  # the code proves they own the address
+    signed_out = db.execute(
+        update(UserSession)
+        .where(UserSession.user_id == user.id, UserSession.revoked_at.is_(None), UserSession.expires_at > now)
+        .values(revoked_at=now)
+    ).rowcount or 0
+    token = _new_session(db, request, user)
+    audit.record(db, Principal(user=user, via="session", ip=client_ip(request)), "auth.password_reset", "user",
+                 user.id, {"signed_out_sessions": signed_out})
+    db.commit()
+    _set_cookie(response, token)
+    return {"user": UserOut.model_validate(user)}
 
 
 @router.post("/login", response_model=UserEnvelope)

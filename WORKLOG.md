@@ -6,6 +6,33 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-05 — Forgot password and show/hide password
+
+### Done
+- **Forgot password:** "Forgot password?" on the log-in page opens `/forgot-password`. Enter your email, get a
+  6-digit code (same rules as verification codes), then enter it with a new password. Every session is signed
+  out and this browser is logged in. New routes `POST /v1/auth/forgot-password` and
+  `POST /v1/auth/reset-password`; audit action `auth.password_reset`. The first route answers the same whether or
+  not the account exists, sends the email after responding, and skips too-frequent requests quietly, so it can't
+  be used to find accounts. A reset also marks the email verified, since the code proves ownership.
+- **Reset email:** "Reset your HookFlow password", same dark design as the verification email (the two now share
+  one template), code kept out of the subject.
+- **Show/hide password:** an eye button on every password field (log in, sign up, Security page, reset page),
+  in a new `PasswordInput` component.
+- Checked: 9 new tests in `tests/test_password_reset.py`; all 197 backend tests pass; frontend typecheck; end to
+  end through the local dashboard proxy (with `MAIL_BACKEND=console` for the test, then put back to `gmail`);
+  screenshots of the log-in and reset pages.
+- **Back button fixed:** after logging in, Back went to the log-in page. Now:
+  - logging in or out, signing up, verifying and resetting replace the page in history (`lib/navigation.ts`), so
+    Back skips them;
+  - the log-in, sign-up and reset pages send an already logged-in browser to the dashboard (the page passes
+    whether the session cookie exists, and the API confirms it);
+  - `FreshOnBack` reloads auth and dashboard pages that the browser restores from memory on Back, so a
+    logged-out dashboard is never shown.
+  Checked in headless Chrome: landing → log in → Back lands on the landing page; opening `/login` or `/register`
+  while logged in goes to Overview; Back after logging out stays on the log-in page.
+- No new settings, so deploying is just commit and push.
+
 ## 2026-11-04 — Milestone 4 deployed
 
 ### Done
@@ -50,10 +77,13 @@ Each entry covers: what was built or changed, decisions made, how it was checked
   frontend typecheck; end to end locally (blocked before the code, wrong code counted, right code unlocks);
   screenshot of the page.
 - **Verification email design** (`app/email_templates.py`): HTML in the website's dark theme (near-black, cream
-  text, lime code and italic serif accent; Instrument Serif and Geist where the mail app loads web fonts), (tables and inline styles, so Gmail,
-  Outlook and Apple Mail show it the same) with a plain-text version. Large code, expiry note, "Enter code in
+  text, lime code and italic serif accent; Instrument Serif and Geist where the mail app loads web fonts), built
+  with tables and inline styles so Gmail, Outlook and Apple Mail show it the same, plus a plain-text version. Large code, expiry note, "Enter code in
   HookFlow" button, and a "didn't sign up?" note. Links use the new `APP_URL` setting (set it on Render to
   `https://web-rook.vercel.app`). Checked at desktop and phone widths.
+- **Code kept out of the subject:** the subject is now "Confirm your email for HookFlow" and the preview line only
+  says when the code expires, so the code doesn't show in notifications, on a lock screen or in the inbox list.
+  The test checks the code isn't in the subject.
 - **Privacy policy and terms** at `/privacy` and `/terms` (public, linked in the site footer), for Google's
   sign-in screen and the public site. They describe what is actually stored and for how long. The contact is the
   GitHub issues page unless `NEXT_PUBLIC_CONTACT_EMAIL` is set on Vercel.

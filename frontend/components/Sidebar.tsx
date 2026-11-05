@@ -136,7 +136,7 @@ export function Sidebar() {
     } catch {
       // Even if the call fails, send the user to the login page.
     }
-    window.location.assign("/login");
+    window.location.replace("/login"); // Back shouldn't return to the dashboard
   }
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");

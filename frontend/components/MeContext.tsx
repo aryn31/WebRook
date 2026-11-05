@@ -29,7 +29,7 @@ export function MeProvider({ children }: { children: React.ReactNode }) {
       const m = await api.me();
       if (!m.user.email_verified) {
         const { pathname, search } = window.location;
-        window.location.assign(`/verify-email?next=${encodeURIComponent(pathname + search)}`);
+        window.location.replace(`/verify-email?next=${encodeURIComponent(pathname + search)}`);
         return null;
       }
       setMe(m);

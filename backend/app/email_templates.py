@@ -83,32 +83,31 @@ def _layout(*, preheader: str, body: str, app_url: str) -> str:
 </html>"""
 
 
-def verification_code(*, code: str, email: str, minutes: int, app_url: str) -> tuple[str, str, str]:
-    # The code stays out of the subject and preview text, so it isn't shown in notifications or on a lock screen.
-    subject = "Confirm your email for HookFlow"
-    verify_url = f"{app_url.rstrip('/')}/verify-email"
+def _code_email(*, label: str, heading: str, accent: str, intro_text: str, intro_html: str, code: str,
+                minutes: int, button: str, button_url: str, ignore_title: str, ignore_text: str,
+                app_url: str) -> tuple[str, str]:
+    """Plain text and HTML for an email whose main content is a one-time code."""
+    text = f"""{heading} {accent}
 
-    text = f"""Confirm your email address
-
-Use this code to finish creating your HookFlow account for {email}:
+{intro_text}
 
     {code}
 
 The code expires in {minutes} minutes and can only be used once.
-Enter it here: {verify_url}
+Enter it here: {button_url}
 
-Didn't sign up?
-You can safely ignore this email. Nobody can use the account without this code.
+{ignore_title}
+{ignore_text}
 Never share this code with anyone. HookFlow will never ask you for it.
 
 HookFlow: send the event once, we make sure it arrives.
 {app_url}
 """
 
-    body = f"""            <p style="margin:0 0 14px;font-family:{MONO};font-size:11px;line-height:16px;letter-spacing:0.14em;text-transform:uppercase;color:{MUTED};">Email verification</p>
-            <h1 style="margin:0 0 14px;font-family:{SERIF};font-size:38px;line-height:40px;font-weight:400;color:{TEXT};letter-spacing:-0.01em;">Confirm your <em style="color:{SIGNAL};">email.</em></h1>
+    body = f"""            <p style="margin:0 0 14px;font-family:{MONO};font-size:11px;line-height:16px;letter-spacing:0.14em;text-transform:uppercase;color:{MUTED};">{escape(label)}</p>
+            <h1 style="margin:0 0 14px;font-family:{SERIF};font-size:38px;line-height:40px;font-weight:400;color:{TEXT};letter-spacing:-0.01em;">{escape(heading)} <em style="color:{SIGNAL};">{escape(accent)}</em></h1>
             <p style="margin:0 0 26px;font-size:15px;line-height:24px;color:{TEXT_2};">
-              Use this code to finish creating your HookFlow account for <strong style="color:{TEXT};font-weight:600;">{escape(email)}</strong>.
+              {intro_html}
             </p>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
               <tr>
@@ -123,18 +122,63 @@ HookFlow: send the event once, we make sure it arrives.
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
               <tr>
                 <td align="center" bgcolor="{TEXT}" style="background:{TEXT};border-radius:999px;">
-                  <a href="{escape(verify_url)}" style="display:inline-block;padding:12px 26px;font-family:{SANS};font-size:14px;font-weight:600;color:{BG};text-decoration:none;">Enter code in HookFlow &rarr;</a>
+                  <a href="{escape(button_url)}" style="display:inline-block;padding:12px 26px;font-family:{SANS};font-size:14px;font-weight:600;color:{BG};text-decoration:none;">{escape(button)} &rarr;</a>
                 </td>
               </tr>
             </table>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:32px;">
               <tr><td style="border-top:1px solid {BORDER};font-size:0;line-height:0;">&nbsp;</td></tr>
             </table>
-            <p style="margin:20px 0 6px;font-size:13px;line-height:20px;font-weight:600;color:{TEXT};">Didn&#39;t sign up?</p>
+            <p style="margin:20px 0 6px;font-size:13px;line-height:20px;font-weight:600;color:{TEXT};">{escape(ignore_title)}</p>
             <p style="margin:0;font-size:13px;line-height:20px;color:{MUTED};">
-              You can safely ignore this email. Nobody can use the account without this code.
+              {escape(ignore_text)}
               Never share it with anyone. HookFlow will never ask you for it.
             </p>"""
 
     html = _layout(preheader=f"Your code expires in {minutes} minutes.", body=body, app_url=app_url)
+    return text, html
+
+
+# Codes stay out of subjects and preview text, so they aren't shown in notifications or on a lock screen.
+
+def verification_code(*, code: str, email: str, minutes: int, app_url: str) -> tuple[str, str, str]:
+    subject = "Confirm your email for HookFlow"
+    strong = f'<strong style="color:{TEXT};font-weight:600;">{escape(email)}</strong>'
+    text, html = _code_email(
+        label="Email verification",
+        heading="Confirm your",
+        accent="email.",
+        intro_text=f"Use this code to finish creating your HookFlow account for {email}:",
+        intro_html=f"Use this code to finish creating your HookFlow account for {strong}.",
+        code=code,
+        minutes=minutes,
+        button="Enter code in HookFlow",
+        button_url=f"{app_url.rstrip('/')}/verify-email",
+        ignore_title="Didn't sign up?",
+        ignore_text="You can safely ignore this email. Nobody can use the account without this code.",
+        app_url=app_url,
+    )
+    return subject, text, html
+
+
+def password_reset_code(*, code: str, email: str, minutes: int, app_url: str) -> tuple[str, str, str]:
+    subject = "Reset your HookFlow password"
+    strong = f'<strong style="color:{TEXT};font-weight:600;">{escape(email)}</strong>'
+    text, html = _code_email(
+        label="Password reset",
+        heading="Reset your",
+        accent="password.",
+        intro_text=f"Someone asked to reset the password for the HookFlow account {email}. "
+                   "If it was you, use this code to choose a new one:",
+        intro_html=f"Someone asked to reset the password for the HookFlow account {strong}. "
+                   "If it was you, use this code to choose a new one.",
+        code=code,
+        minutes=minutes,
+        button="Reset password",
+        button_url=f"{app_url.rstrip('/')}/forgot-password",
+        ignore_title="Didn't ask for this?",
+        ignore_text="You can safely ignore this email. Your password stays the same, and nobody can change it "
+                    "without this code.",
+        app_url=app_url,
+    )
     return subject, text, html

@@ -51,7 +51,7 @@ export function InviteCard({ token }: { token: string }) {
     try {
       await api.acceptInvite(token);
       // The session now works in the team's account; reload so the dashboard starts fresh.
-      window.location.assign("/overview");
+      window.location.replace("/overview");
     } catch (err) {
       setAccepting(false);
       if (err instanceof ApiError && err.code === "invite_wrong_user") {

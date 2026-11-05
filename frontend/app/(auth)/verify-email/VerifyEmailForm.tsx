@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, errorMessage } from "@/lib/api";
+import { leaveTo } from "@/lib/navigation";
 
 const RESEND_SECONDS = 60;
 
@@ -29,7 +30,7 @@ export function VerifyEmailForm() {
     api
       .me()
       .then((m) => {
-        if (m.user.email_verified) window.location.assign(safeNext());
+        if (m.user.email_verified) leaveTo(safeNext());
         else setEmail(m.user.email);
       })
       .catch(() => {}); // 401 already redirects to /login
@@ -48,7 +49,7 @@ export function VerifyEmailForm() {
     setNotice(null);
     try {
       await api.verifyEmail(value);
-      window.location.assign(safeNext());
+      leaveTo(safeNext());
     } catch (err) {
       setError(errorMessage(err));
       if (err instanceof ApiError && err.code === "code_expired") setCode("");
@@ -92,7 +93,7 @@ export function VerifyEmailForm() {
     } catch {
       // Go to sign-up either way.
     }
-    window.location.assign("/register");
+    leaveTo("/register");
   }
 
   return (

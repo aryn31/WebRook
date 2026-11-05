@@ -421,15 +421,15 @@ function redirectToVerify() {
   if (typeof window === "undefined") return;
   const { pathname, search } = window.location;
   if (pathname === "/verify-email") return;
-  window.location.assign(`/verify-email?next=${encodeURIComponent(pathname + search)}`);
+  window.location.replace(`/verify-email?next=${encodeURIComponent(pathname + search)}`);
 }
 
 function redirectToLogin() {
   if (typeof window === "undefined") return;
   const { pathname, search } = window.location;
-  if (pathname === "/login" || pathname === "/register") return;
+  if (["/login", "/register", "/forgot-password"].includes(pathname)) return;
   const next = encodeURIComponent(pathname + search);
-  window.location.assign(`/login?next=${next}`);
+  window.location.replace(`/login?next=${next}`);
 }
 
 export async function request<T>(
@@ -506,6 +506,10 @@ export const api = {
     request<{ user: User }>("POST", "/auth/login", { body: { email, password } }),
   logout: () => request<void>("POST", "/auth/logout"),
   me: () => request<Me>("GET", "/auth/me"),
+  forgotPassword: (email: string) =>
+    request<{ message: string; resend_after_seconds: number }>("POST", "/auth/forgot-password", { body: { email } }),
+  resetPassword: (email: string, code: string, new_password: string) =>
+    request<{ user: User }>("POST", "/auth/reset-password", { body: { email, code, new_password } }),
   verifyEmail: (code: string) => request<{ user: User }>("POST", "/auth/verify-email", { body: { code } }),
   resendVerification: () =>
     request<{ sent_to: string; resend_after_seconds: number }>("POST", "/auth/resend-verification"),
