@@ -1238,11 +1238,14 @@ can be recovered after a worker restart. *(Met. Recovery from a Redis outage is 
 **Exit criteria:** Critical security and recovery tests pass, operational metrics are available, and the system can
 be used safely within documented limits. *(Met.)*
 
-### Milestone 4: Product Improvements (Week 6 and beyond). **Status (v1.3): Complete except email alerts**
+### Milestone 4: Product Improvements (Week 6 and beyond). **Status: Complete** (email alerts added 2026-11-06)
 
 Potential additions, with their status (2026-11-02):
 
-- Email alerts. *Not started.*
+- Email alerts. **Done (2026-11-06):** after 5 failed attempts in a row (`ALERT_AFTER_FAILURES`) the account's
+  owner and admins get one email; one more when the endpoint next succeeds, with downtime and failed deliveries to
+  replay. Decided in the same transaction as the attempt, so it's sent once even with many workers. Opt out per
+  person on the Security page.
 - Team accounts. **Done:** an account is identified by its owner. Owners and admins invite people by a one-time link
   (no email is sent); members are admin, developer or viewer. Every route checks a permission, and the audit log
   names the person who acted. Sessions switch between accounts.

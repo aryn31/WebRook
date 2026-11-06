@@ -25,7 +25,7 @@ import httpx
 from sqlalchemy import delete, exists, or_, select, tuple_, update
 from sqlalchemy.orm import lazyload
 
-from app import outbox
+from app import alerts, outbox
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import (
@@ -236,8 +236,8 @@ def _record(delivery_id: str, attempt_number: int, started: datetime, duration_m
                 success=o.success,
             )
         )
-        max_attempts, base, schedule = db.execute(
-            select(Delivery.max_attempts, Delivery.retry_base_attempt, Endpoint.retry_schedule)
+        max_attempts, base, schedule, endpoint_id = db.execute(
+            select(Delivery.max_attempts, Delivery.retry_base_attempt, Endpoint.retry_schedule, Endpoint.id)
             .join(Endpoint, Endpoint.id == Delivery.endpoint_id)
             .where(Delivery.id == delivery_id)
         ).one()
@@ -269,11 +269,16 @@ def _record(delivery_id: str, attempt_number: int, started: datetime, duration_m
                    Delivery.attempt_count == attempt_number)
             .values(**values)
         )
+        alert: alerts.Pending | None = None
         if result.rowcount == 0:
             log.warning("Lease lost before result was recorded", extra={"delivery_id": delivery_id})
-        elif next_at is not None:
-            outbox.add(db, [delivery_id], available_at=next_at)
+        else:
+            if next_at is not None:
+                outbox.add(db, [delivery_id], available_at=next_at)
+            alert = alerts.on_attempt(db, endpoint_id, o.success, now)
         db.commit()
+    if alert is not None:
+        alerts.send(alert)
     log.info(
         "delivery attempt",
         extra={

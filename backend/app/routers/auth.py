@@ -20,6 +20,7 @@ from app.schemas import (
     MeOut,
     PasswordChangeIn,
     PasswordChangeOut,
+    PreferencesIn,
     RegisterIn,
     RegisterOut,
     ResetPasswordIn,
@@ -350,6 +351,18 @@ def change_password(
     db.commit()
     _set_cookie(response, token)
     return {"signed_out_sessions": signed_out}
+
+
+@router.patch("/preferences", response_model=UserEnvelope)
+def update_preferences(body: PreferencesIn, principal: SessionPrincipal, db: DB) -> dict:
+    """Your email settings. They apply to you in every account you belong to."""
+    me = db.get(User, principal.actor.id)
+    if me.failure_alerts != body.failure_alerts:
+        me.failure_alerts = body.failure_alerts
+        audit.record(db, _personal(principal), "auth.preferences_changed", "user", me.id,
+                     {"failure_alerts": body.failure_alerts})
+        db.commit()
+    return {"user": UserOut.model_validate(me)}
 
 
 @router.get("/sessions", response_model=ListOf[SessionOut])

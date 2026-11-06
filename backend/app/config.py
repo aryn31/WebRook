@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     mail_backend: Literal["console", "smtp", "gmail", "brevo"] = "console"
     mail_from_email: str = "no-reply@hookflow.local"
     mail_from_name: str = "HookFlow"
+    # Where messages from the website's contact form go (and the address shown as support).
+    support_email: str = "wendfolk02@gmail.com"
     # The dashboard's public address, for links in emails.
     app_url: str = "http://localhost:3000"
     smtp_host: str = ""
@@ -46,6 +48,8 @@ class Settings(BaseSettings):
     gmail_client_secret: str = ""
     gmail_refresh_token: str = ""
     # Email verification codes
+    # Email owners and admins after this many failed attempts in a row to one endpoint (0 turns alerts off).
+    alert_after_failures: int = 5
     email_code_ttl_minutes: int = 15
     email_code_max_attempts: int = 5
     email_code_resend_seconds: int = 60

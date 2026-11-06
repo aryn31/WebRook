@@ -1570,3 +1570,77 @@ html { transition: background-color 0.25s; }
 .security-tips li { position: relative; padding-left: 22px; color: var(--text-2); font-size: 13px; }
 .security-tips li::before { content: "✓"; position: absolute; left: 0; color: var(--status-delivered); font-weight: 700; }
 @media (max-width: 900px) { .security-split { grid-template-columns: 1fr; } }
+
+/* email alert preference */
+.pref-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.pref-text { min-width: 0; }
+.pref-title { font-weight: 600; font-size: 13.5px; margin-bottom: 3px; }
+.switch {
+  position: relative; flex: none; width: 44px; height: 26px; border-radius: 999px; border: 1px solid var(--border-strong);
+  background: var(--surface-2); cursor: pointer; padding: 0; transition: background 0.2s, border-color 0.2s;
+}
+.switch-knob {
+  position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--muted);
+  transition: transform 0.25s var(--ease), background 0.2s;
+}
+.switch.on { background: var(--signal); border-color: var(--signal); }
+.switch.on .switch-knob { transform: translateX(18px); background: var(--signal-ink); }
+.switch:disabled { opacity: 0.6; cursor: default; }
+.switch:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.ep-hero-alerted { margin: -6px 0 14px; font-size: 12.5px; color: var(--text-2); }
+
+/* contact page */
+.contact { padding-top: 64px; padding-bottom: 96px; }
+.contact-head { max-width: 640px; margin-bottom: 40px; animation: rise 0.8s var(--ease) both; }
+.contact-head .legal-title em { color: var(--text-2); }
+.contact-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 24px; align-items: start; animation: rise 0.8s 0.1s var(--ease) both; }
+.contact-card { padding: 28px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg); }
+.contact-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.contact-topics { border: 0; padding: 0; margin: 0; }
+.contact-topics legend { margin-bottom: 7px; padding: 0; }
+.contact-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.contact-chip {
+  position: relative; display: inline-flex; align-items: center; padding: 7px 13px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-strong); font-size: 13px; color: var(--text-2); transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.contact-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.contact-chip:hover { color: var(--text); }
+.contact-chip.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+.contact-chip:has(input:focus-visible) { outline: 2px solid var(--text); outline-offset: 2px; }
+.contact-message { min-height: 160px; padding: 10px 12px; }
+.contact-count { text-align: right; }
+.contact-hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.contact-submit { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.contact-sent { text-align: center; padding: 40px 10px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.contact-sent h2 { font-family: var(--serif); font-weight: 400; font-size: 34px; }
+.contact-sent p { max-width: 26em; margin: 0 0 8px; }
+.contact-sent-icon {
+  width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; font-weight: 700;
+  background: var(--signal); color: var(--signal-ink); animation: pop 0.5s var(--ease);
+}
+.contact-side { display: flex; flex-direction: column; gap: 16px; }
+.contact-support { padding: 26px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); position: relative; overflow: hidden; }
+.contact-support::before {
+  content: ""; position: absolute; inset: -50% -30% auto auto; width: 280px; height: 280px; pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--signal) 12%, transparent), transparent 65%);
+}
+.contact-support > * { position: relative; }
+.contact-support-icon {
+  width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 14px;
+  background: var(--signal); color: var(--signal-ink);
+}
+.contact-support h2 { font-family: var(--serif); font-weight: 400; font-size: 30px; margin: 0 0 4px; }
+.contact-email { display: block; font-size: 15px; color: var(--text); margin: 10px 0 14px; word-break: break-all; }
+.contact-email:hover { color: var(--link); }
+.contact-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.contact-note { margin: 16px 0 0; font-size: 12.5px; color: var(--muted); }
+.contact-links { padding: 20px 22px; border-radius: 14px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 9px; }
+.contact-links-title { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 2px; }
+.contact-links a { color: var(--text); font-size: 14px; }
+.contact-links a:hover { color: var(--link); }
+@media (max-width: 860px) {
+  .contact-grid { grid-template-columns: 1fr; }
+  .contact-row { grid-template-columns: 1fr; }
+  .contact { padding-top: 40px; }
+  .contact-card { padding: 20px; }
+}

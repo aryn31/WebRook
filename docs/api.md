@@ -106,6 +106,13 @@ Body: `{ "code": "123456" }` → `200 { "user": User }`. `400 invalid_code` (wit
 Emails a new code; the previous one stops working. `429 resend_too_soon` within 60 seconds of the last code (with
 `Retry-After`), at most 5 per hour, `503 email_failed` if sending failed, `400 already_verified`.
 
+### `POST /v1/contact`
+The website's contact form; no login needed. Body: `{ "name", "email", "topic", "message", "website" }` →
+`202 { "message" }`. `topic` is `question`, `support`, `sales`, `bug` or `other`; `message` is 10–5000 characters;
+`website` is a hidden field that must stay empty (anything in it drops the message quietly). Emailed to
+`SUPPORT_EMAIL` with Reply-To set to the sender. 5 messages an hour per IP and per email (`429 rate_limited`);
+`503 email_failed` if it couldn't be sent (the message names the support address).
+
 ### Forgot password
 
 No login needed. Codes work like verification codes: 6 digits, 15 minutes, 5 wrong guesses.
@@ -124,6 +131,12 @@ password, signs out every session, logs this browser in (sets the session cookie
 
 These act on the logged-in person, whichever account they're working in, and are recorded in that person's own
 audit log.
+
+### `PATCH /v1/auth/preferences`
+Body: `{ "failure_alerts": bool }` → `200 { "user": User }`. Your email settings, for every account you belong to.
+`failure_alerts` (default on): email me when an endpoint in an account I own or administer fails
+`ALERT_AFTER_FAILURES` attempts in a row (default 5), and once more when it next succeeds. `User` includes
+`failure_alerts`; endpoints include `alert_sent_at` (when the failing email went out, null when not failing).
 
 ### `POST /v1/auth/password`
 Body: `{ "current_password", "new_password" }` (new: 10–256 characters) → `200 { "signed_out_sessions": n }`.
@@ -459,6 +472,7 @@ type AuditLog = {
 | `auth.registered`, `auth.login` | Account created, signed in |
 | `auth.email_verified` | Email address verified |
 | `auth.password_reset` | Password reset with an emailed code; `details.signed_out_sessions` |
+| `auth.preferences_changed` | Email settings changed; `details.failure_alerts` |
 | `auth.password_changed`, `auth.session_signed_out`, `auth.sessions_signed_out` | Password changed, sessions signed out from the Security page |
 | `api_key.created`, `api_key.revoked` | API key changes |
 | `endpoint.created`, `endpoint.archived` | |

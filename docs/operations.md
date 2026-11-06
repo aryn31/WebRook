@@ -48,6 +48,8 @@ All settings are environment variables. Only `SECRET_ENCRYPTION_KEY` is required
 | `METRICS_TOKEN` | unset | If set, `GET /metrics` needs `Authorization: Bearer <token>` |
 | `ALERT_QUEUE_DELAY_SECONDS` | `300` | Alert when due work has waited longer than this |
 | `ALERT_WORKER_SILENCE_SECONDS` | `120` | `/health/ready` reports the worker as `stale` after this |
+| `ALERT_AFTER_FAILURES` | `5` | Email owners and admins after this many failed attempts in a row to one endpoint, and again when it recovers. `0` turns alerts off. People can opt out on the Security page |
+| `SUPPORT_EMAIL` | `wendfolk02@gmail.com` | Where contact-form messages go (shown on the site as the support address) |
 | `MAIL_BACKEND` | `console` | `console` (log emails, for development), `gmail`, `smtp` or `brevo`. See [Email](#email) |
 | `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | — | For `MAIL_BACKEND=gmail`; from `backend/scripts/gmail_token.py` |
 | `MAIL_FROM_EMAIL` / `MAIL_FROM_NAME` | `no-reply@hookflow.local` / `HookFlow` | Sender of verification emails |

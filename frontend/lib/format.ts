@@ -213,6 +213,7 @@ export const AUDIT_LABEL: Record<string, string> = {
   "auth.login": "Logged in",
   "auth.password_changed": "Password changed",
   "auth.password_reset": "Password reset by email",
+  "auth.preferences_changed": "Email settings changed",
   "auth.email_verified": "Email verified",
   "auth.session_signed_out": "Signed out a session",
   "auth.sessions_signed_out": "Signed out other sessions",
@@ -264,6 +265,9 @@ export function auditSummary(log: AuditLog): string[] {
       }
       break;
     case "auth.password_changed":
+    case "auth.preferences_changed":
+      if (typeof d.failure_alerts === "boolean") return [`Failure alerts turned ${d.failure_alerts ? "on" : "off"}`];
+      break;
     case "auth.password_reset":
     case "auth.sessions_signed_out":
       if (typeof d.signed_out_sessions === "number") {

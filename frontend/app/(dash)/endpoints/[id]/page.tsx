@@ -111,7 +111,7 @@ const HEALTH_COPY: Record<EndpointHealth["state"], { tone: string; title: string
   idle: { tone: "idle", title: "No traffic yet", body: "No delivery attempts in the last 24 hours. Send a test event to check it." },
 };
 
-function HealthCard({ health }: { health: EndpointHealth }) {
+function HealthCard({ health, alertSentAt }: { health: EndpointHealth; alertSentAt: string | null }) {
   const c = HEALTH_COPY[health.state];
   const pct = health.success_rate == null ? null : Math.round(health.success_rate * 1000) / 10;
   const failed = health.attempts - health.successes;
@@ -121,6 +121,12 @@ function HealthCard({ health }: { health: EndpointHealth }) {
       <div className="hero-main">
         <div className="hero-verdict"><span className="hero-verdict-dot" aria-hidden />{c.title}</div>
         <p className="hero-body">{c.body}</p>
+        {alertSentAt && (
+          <p className="ep-hero-alerted">
+            <span aria-hidden>✉</span> Owners and admins were emailed {relative(alertSentAt)}. They&apos;ll get one more
+            email when it&apos;s working again.
+          </p>
+        )}
         {health.last_success === false && (
           <div className="ep-hero-error">
             <span className="mono">{health.last_status_code ?? "ERR"}</span>
@@ -444,7 +450,7 @@ export default function EndpointDetailPage() {
         <div className="alert alert-warning">This endpoint is disabled. It won&apos;t receive new deliveries until you enable it.</div>
       )}
 
-      {health && !editing && <HealthCard health={health} />}
+      {health && !editing && <HealthCard health={health} alertSentAt={endpoint.alert_sent_at} />}
 
       <section className="card">
         <div className="card-head">

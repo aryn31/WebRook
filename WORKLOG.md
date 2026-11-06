@@ -6,6 +6,45 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-06 — Public pages and unverified sign-ups
+
+### Done
+- **Email alerts when an endpoint keeps failing** (the last Milestone 4 item):
+  - Each endpoint counts failed attempts in a row (migration `0007`: `consecutive_failures`, `failing_since`,
+    `alert_sent_at` on endpoints; `failure_alerts` on users). At 5 (`ALERT_AFTER_FAILURES`, 0 = off) the
+    account owner and admins get "Alert: <endpoint> is failing" with the URL, count, start time and last error.
+    Nothing more while it stays down. The next success sends "Resolved: <endpoint> is working again" with how long
+    it was down and how many deliveries failed, linking to the endpoint page to replay them.
+  - `app/alerts.py`: decided inside the transaction that records the attempt (row-level update, so one alert
+    even with many workers); sent after commit and never breaks delivery. If no email could be sent, the alert
+    isn't marked sent, so the next failure tries again.
+  - `PATCH /v1/auth/preferences` with a switch on the Security page ("Email alerts"); audit action
+    `auth.preferences_changed`. Endpoint page notes when owners and admins were emailed.
+  - Checked: 8 new tests in `tests/test_alerts.py`; all 205 backend tests pass; migration down and up; live run
+    on the local stack (5th failure sent the alert, fixing the URL sent the recovery email, console mail mode,
+    then back to Gmail); email previews; screenshots. Alerts turned off for the local test account so it never
+    emails its fake address.
+  - Docs: `docs/api.md`, `docs/operations.md` (`ALERT_AFTER_FAILURES`), PRD Milestone 4 marked complete.
+  - Deploying: just commit and push. Render runs migration `0007` on start; Gmail sending is already set up.
+- **Contact page** (`/contact`, linked in the site header and footer): a form (name, email, topic chips, message)
+  and a Support panel with wendfolk02@gmail.com (open email / copy). Logged-in visitors get their email filled in.
+  `POST /v1/contact` emails the message to `SUPPORT_EMAIL` (default wendfolk02@gmail.com) with Reply-To set to
+  the sender, so replying answers them. Spam: hidden honeypot field, 5 per hour per IP and per email; HTML is
+  escaped. The mailer gained a `reply_to` option. The Privacy and Terms pages show the address too (was GitHub
+  issues). Checked: 6 new tests (211 pass); a real send through the local stack (console mail mode, then back
+  to Gmail); screenshots in dark, light and the sent state.
+- **Fixed contact-page shortcuts:** "Reset your password" sent logged-in visitors to the dashboard (the reset page
+  is for logged-out people). Logged-in visitors now see "Change your password" (→ Security). Internal links switch
+  pages instantly instead of reloading. Clicked through all four, logged in and out.
+- **Competitor research:** `docs/competitive-analysis.md` compares Svix, Hookdeck Outpost, Convoy, Hook0 and
+  Webhook Relay (prices checked today) with HookFlow, and recommends: Standard Webhooks signatures, a customer
+  portal, a receiver security check, proof-of-delivery links, an endpoint doctor, gentle catch-up after outages,
+  payload change warnings, and adding a license (the repo has none).
+- **Fixed:** someone who signed up but hadn't entered their email code saw "Dashboard" on the home page (the
+  session exists, so `/v1/auth/me` answers). `AuthCta` now checks `email_verified`: unverified visitors see
+  "Verify email" in the top bar and "Finish signing up" in the hero, both going to `/verify-email`. Verified users
+  still see "Dashboard"; logged-out visitors still see Log in / Sign up. Checked with screenshots of both cases.
+
 ## 2026-11-05 — Forgot password and show/hide password
 
 ### Done

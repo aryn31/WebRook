@@ -253,6 +253,63 @@ function SessionsCard({ reloadKey }: { reloadKey: number }) {
   );
 }
 
+function AlertsCard() {
+  const { me, refresh } = useMe();
+  const [on, setOn] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => {
+    if (me) setOn(me.user.failure_alerts);
+  }, [me]);
+
+  async function toggle() {
+    if (on == null) return;
+    const next = !on;
+    setOn(next); // feels instant; put back if the save fails
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.updatePreferences({ failure_alerts: next });
+      void refresh();
+    } catch (e) {
+      setOn(!next);
+      setErr(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>Email alerts</h2>
+        <span className="muted small">Sent to {me?.user.email ?? "you"}</span>
+      </div>
+      <div className="pref-row">
+        <div className="pref-text">
+          <div className="pref-title">When an endpoint keeps failing</div>
+          <div className="muted small">
+            One email after 5 failed attempts in a row, and one more when it&apos;s working again. Nothing in between.
+            Sent for accounts you own or are an admin of.
+          </div>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={!!on}
+          aria-label="Email me when an endpoint keeps failing"
+          className={`switch${on ? " on" : ""}`}
+          disabled={on == null || busy}
+          onClick={toggle}
+        >
+          <span className="switch-knob" />
+        </button>
+      </div>
+      <ErrorBox error={err} />
+    </section>
+  );
+}
+
 export default function SecurityPage() {
   const { me } = useMe();
   // Changing the password signs out other sessions, so the list is re-read afterwards.
@@ -262,10 +319,11 @@ export default function SecurityPage() {
     <div className="page">
       <PageHeader
         title="Security"
-        sub={me ? <>Your login for <strong>{me.user.email}</strong>. This applies to every account you work in.</> : undefined}
+        sub={me ? <>Your login and email settings for <strong>{me.user.email}</strong>. They apply to every account you work in.</> : undefined}
       />
       <PasswordCard onChanged={() => setReloadKey((k) => k + 1)} />
       <SessionsCard reloadKey={reloadKey} />
+      <AlertsCard />
     </div>
   );
 }

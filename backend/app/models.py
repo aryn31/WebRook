@@ -46,6 +46,8 @@ class User(Base):
     created_at: Mapped[datetime] = _now_col()
     # NULL until the person enters the code emailed to them. Unverified users can only verify or log out.
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Email me when an endpoint in an account I own or administer keeps failing (and when it recovers).
+    failure_alerts: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
 
 class EmailCode(Base):
@@ -156,6 +158,11 @@ class Endpoint(Base):
     created_at: Mapped[datetime] = _now_col()
     updated_at: Mapped[datetime] = _now_col(onupdate=func.now())
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Failure alerts (app/alerts.py): failed attempts in a row, when this run of failures started, and when the
+    # "endpoint is failing" email went out. All reset by the next successful attempt.
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    failing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    alert_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     subscriptions: Mapped[list["EndpointSubscription"]] = relationship(
         cascade="all, delete-orphan", lazy="selectin", order_by="EndpointSubscription.event_type"

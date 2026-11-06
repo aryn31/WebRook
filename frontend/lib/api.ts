@@ -4,7 +4,14 @@
 
 // ---------- Types (copied from the contract) ----------
 
-export type User = { id: string; email: string; created_at: string; email_verified: boolean };
+export type User = {
+  id: string;
+  email: string;
+  created_at: string;
+  email_verified: boolean;
+  /** Email me when an endpoint keeps failing (accounts I own or administer). */
+  failure_alerts: boolean;
+};
 
 export type Role = "owner" | "admin" | "developer" | "viewer";
 export type MemberRole = Exclude<Role, "owner">;
@@ -81,6 +88,8 @@ export type Endpoint = {
   retry_schedule: number[] | null;
   /** While in the future, the previous secret still signs alongside the new one. */
   previous_secret_expires_at: string | null;
+  /** When the "endpoint is failing" email went out; null when it isn't failing. */
+  alert_sent_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -506,6 +515,8 @@ export const api = {
     request<{ user: User }>("POST", "/auth/login", { body: { email, password } }),
   logout: () => request<void>("POST", "/auth/logout"),
   me: () => request<Me>("GET", "/auth/me"),
+  contact: (body: { name: string; email: string; topic: string; message: string; website: string }) =>
+    request<{ message: string }>("POST", "/contact", { body }),
   forgotPassword: (email: string) =>
     request<{ message: string; resend_after_seconds: number }>("POST", "/auth/forgot-password", { body: { email } }),
   resetPassword: (email: string, code: string, new_password: string) =>
@@ -516,6 +527,8 @@ export const api = {
   switchAccount: (account_id: string) => request<Me>("POST", "/auth/switch-account", { body: { account_id } }),
 
   // Your security (session only)
+  updatePreferences: (prefs: { failure_alerts: boolean }) =>
+    request<{ user: User }>("PATCH", "/auth/preferences", { body: prefs }),
   changePassword: (current_password: string, new_password: string) =>
     request<{ signed_out_sessions: number }>("POST", "/auth/password", { body: { current_password, new_password } }),
   listSessions: () => request<List<LoginSession>>("GET", "/auth/sessions"),

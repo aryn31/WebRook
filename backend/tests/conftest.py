@@ -66,8 +66,8 @@ SENT_MAIL: list[dict] = []
 def mail(monkeypatch) -> list[dict]:
     """Capture emails instead of sending them. Each is {"to", "subject", "text"}."""
     SENT_MAIL.clear()
-    monkeypatch.setattr("app.mailer.send", lambda to, subject, text, html=None: SENT_MAIL.append(
-        {"to": to, "subject": subject, "text": text, "html": html}))
+    monkeypatch.setattr("app.mailer.send", lambda to, subject, text, html=None, reply_to=None: SENT_MAIL.append(
+        {"to": to, "subject": subject, "text": text, "html": html, "reply_to": reply_to}))
     return SENT_MAIL
 
 

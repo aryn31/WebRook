@@ -182,3 +182,130 @@ def password_reset_code(*, code: str, email: str, minutes: int, app_url: str) ->
         app_url=app_url,
     )
     return subject, text, html
+
+
+# --- Endpoint alerts -------------------------------------------------------------
+
+def _duration(seconds: float) -> str:
+    m = int(seconds // 60)
+    if m < 1:
+        return "under a minute"
+    if m < 60:
+        return f"{m} minute{'s' if m != 1 else ''}"
+    h, m = divmod(m, 60)
+    if h < 48:
+        return f"{h} hour{'s' if h != 1 else ''}" + (f" {m} min" if m else "")
+    d = h // 24
+    return f"{d} days"
+
+
+def _facts(rows: list[tuple[str, str]]) -> str:
+    cells = "".join(
+        f"""<tr>
+                <td style="padding:9px 0;border-top:1px solid {BORDER};font-size:13px;color:{MUTED};width:38%;vertical-align:top;">{escape(k)}</td>
+                <td style="padding:9px 0;border-top:1px solid {BORDER};font-size:13px;color:{TEXT};font-family:{MONO};word-break:break-all;">{escape(v)}</td>
+              </tr>"""
+        for k, v in rows
+    )
+    return f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px;">{cells}</table>'
+
+
+def _alert_email(*, label: str, tone: str, heading: str, accent: str, intro: str, facts: list[tuple[str, str]],
+                 button: str, link: str, footnote: str, app_url: str, preheader: str) -> tuple[str, str]:
+    text = "\n".join([
+        f"{heading} {accent}", "", intro, "",
+        *[f"{k}: {v}" for k, v in facts], "",
+        f"{button}: {link}", "", footnote,
+        f"Turn these emails off: {app_url}/security", "",
+        "HookFlow: send the event once, we make sure it arrives.", app_url, "",
+    ])
+    body = f"""            <p style="margin:0 0 14px;font-family:{MONO};font-size:11px;line-height:16px;letter-spacing:0.14em;text-transform:uppercase;color:{tone};">&#9679;&nbsp; {escape(label)}</p>
+            <h1 style="margin:0 0 14px;font-family:{SERIF};font-size:36px;line-height:40px;font-weight:400;color:{TEXT};letter-spacing:-0.01em;">{escape(heading)} <em style="color:{tone};">{escape(accent)}</em></h1>
+            <p style="margin:0 0 22px;font-size:15px;line-height:24px;color:{TEXT_2};">{escape(intro)}</p>
+            {_facts(facts)}
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" bgcolor="{TEXT}" style="background:{TEXT};border-radius:999px;">
+                  <a href="{escape(link)}" style="display:inline-block;padding:12px 26px;font-family:{SANS};font-size:14px;font-weight:600;color:{BG};text-decoration:none;">{escape(button)} &rarr;</a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:26px 0 0;font-size:13px;line-height:20px;color:{MUTED};">
+              {escape(footnote)}
+              <a href="{escape(app_url)}/security" style="color:{MUTED};">Turn these emails off</a>.
+            </p>"""
+    return text, _layout(preheader=preheader, body=body, app_url=app_url)
+
+
+FAILED = "#ff6b5b"
+OK = "#4ade80"
+
+
+def endpoint_failing(*, name: str, url: str, failures: int, failing_since, status_code: int | None,
+                     error: str | None, endpoint_link: str, app_url: str) -> tuple[str, str, str]:
+    subject = f"Alert: {name} is failing"
+    problem = error or (f"Destination returned HTTP {status_code}." if status_code else "Requests are failing.")
+    facts = [("Endpoint", url), ("Failed in a row", str(failures)), ("Last error", problem)]
+    if failing_since is not None:
+        facts.insert(2, ("Failing since", failing_since.strftime("%d %b %Y, %H:%M UTC")))
+    text, html = _alert_email(
+        label="Endpoint alert", tone=FAILED, heading=name, accent="is failing.",
+        intro=f"The last {failures} attempts to deliver to this endpoint failed. HookFlow keeps retrying as "
+              "usual; deliveries that run out of attempts can be replayed once it's fixed.",
+        facts=facts, button="Open endpoint", link=endpoint_link,
+        footnote="You'll get one more email when it's working again. Nothing else is sent while it stays down.",
+        app_url=app_url, preheader=f"{failures} failed attempts in a row. {problem}",
+    )
+    return subject, text, html
+
+
+def endpoint_recovered(*, name: str, url: str, down_for, failed_deliveries: int, endpoint_link: str,
+                       app_url: str) -> tuple[str, str, str]:
+    subject = f"Resolved: {name} is working again"
+    facts = [("Endpoint", url)]
+    if down_for is not None:
+        facts.append(("Down for", _duration(down_for.total_seconds())))
+    facts.append(("Deliveries that failed", str(failed_deliveries)))
+    intro = "The latest delivery to this endpoint succeeded, so it's accepting events again."
+    if failed_deliveries:
+        intro += f" {failed_deliveries} deliver{'y' if failed_deliveries == 1 else 'ies'} ran out of attempts " \
+                 "while it was down. Replay them from the endpoint's page so nothing is lost."
+    text, html = _alert_email(
+        label="Resolved", tone=OK, heading=name, accent="is back.", intro=intro, facts=facts,
+        button="Replay failed deliveries" if failed_deliveries else "Open endpoint", link=endpoint_link,
+        footnote="You'll be emailed again if it starts failing.", app_url=app_url,
+        preheader="Deliveries are succeeding again.",
+    )
+    return subject, text, html
+
+
+# --- Contact form ------------------------------------------------------------------
+
+TOPIC_LABEL = {"question": "General question", "support": "Help with my account", "sales": "Pricing or sales",
+               "bug": "Bug report", "other": "Other"}
+
+
+def contact_message(*, name: str, email: str, topic: str, message: str, ip: str, app_url: str) -> tuple[str, str, str]:
+    """Sent to the support inbox. Reply-To is the sender, so replying answers them directly."""
+    label = TOPIC_LABEL.get(topic, topic)
+    subject = f"[Contact] {label} from {name}"
+    text = f"""New message from the HookFlow contact form. Reply to this email to answer {name}.
+
+Name: {name}
+Email: {email}
+Topic: {label}
+IP: {ip}
+
+{message}
+"""
+    paragraphs = "".join(
+        f'<p style="margin:0 0 12px;">{escape(p)}</p>' for p in message.replace("\r\n", "\n").split("\n") if p.strip()
+    )
+    body = f"""            <p style="margin:0 0 14px;font-family:{MONO};font-size:11px;line-height:16px;letter-spacing:0.14em;text-transform:uppercase;color:{SIGNAL};">&#9679;&nbsp; Contact form</p>
+            <h1 style="margin:0 0 14px;font-family:{SERIF};font-size:34px;line-height:38px;font-weight:400;color:{TEXT};">{escape(label)} <em style="color:{SIGNAL};">from {escape(name)}.</em></h1>
+            <p style="margin:0 0 20px;font-size:14px;line-height:22px;color:{TEXT_2};">Reply to this email to answer them directly.</p>
+            {_facts([("Name", name), ("Email", email), ("Topic", label), ("IP", ip)])}
+            <div style="padding:18px 20px;border-radius:12px;background:{SURFACE_2};border:1px solid {BORDER};font-size:14px;line-height:22px;color:{TEXT};">
+              {paragraphs}
+            </div>"""
+    return subject, text, _layout(preheader=message[:120], body=body, app_url=app_url)

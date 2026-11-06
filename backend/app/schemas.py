@@ -70,6 +70,8 @@ class UserOut(BaseModel):
     email: str
     created_at: datetime
     email_verified_at: datetime | None = Field(default=None, exclude=True)
+    # Email me when an endpoint keeps failing (only sent for accounts I own or administer).
+    failure_alerts: bool = True
 
     @computed_field
     @property
@@ -111,6 +113,23 @@ class VerifyEmailIn(BaseModel):
 class VerificationSentOut(BaseModel):
     sent_to: str
     resend_after_seconds: int
+
+
+class ContactIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+    topic: Literal["question", "support", "sales", "bug", "other"] = "question"
+    message: str = Field(min_length=10, max_length=5000)
+    # Hidden from people; bots tend to fill every field. Anything here means the message is quietly dropped.
+    website: str = Field(default="", max_length=200)
+
+
+class ContactOut(BaseModel):
+    message: str
+
+
+class PreferencesIn(BaseModel):
+    failure_alerts: bool
 
 
 class ForgotPasswordIn(BaseModel):
@@ -334,6 +353,8 @@ class EndpointOut(BaseModel):
     retry_schedule: list[int] | None = None
     # When the old secret stops signing after a rotation; null when there's no grace period running.
     previous_secret_expires_at: datetime | None = None
+    # When the "endpoint is failing" email went out for the current run of failures; null once it recovers.
+    alert_sent_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
