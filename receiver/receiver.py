@@ -5,6 +5,8 @@ Control the response with the URL path:
   /hooks            -> 200
   /status/503       -> 503 (any status code)
   /slow/15          -> waits 15 seconds, then 200 (to test timeouts)
+  /secure           -> 200 only when the signature is valid and recent, otherwise 401 (needs RECEIVER_SECRET);
+                       a well-behaved receiver, for trying the signature check
 """
 
 import hashlib
@@ -37,6 +39,8 @@ class Handler(BaseHTTPRequestHandler):
         if parts[0] == "slow" and len(parts) > 1 and parts[1].isdigit():
             time.sleep(int(parts[1]))
         sig = verify(body, self.headers.get("HookFlow-Timestamp", ""), self.headers.get("HookFlow-Signature", ""))
+        if parts[0] == "secure" and sig != "valid":
+            status = 401
         try:
             pretty = json.dumps(json.loads(body), indent=2)
         except ValueError:

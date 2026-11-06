@@ -163,6 +163,8 @@ class Endpoint(Base):
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     failing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     alert_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Last receiver security check (app/security_check.py): verdict, summary, time and each test request's result.
+    security_check: Mapped[dict | None] = mapped_column(JSONB)
 
     subscriptions: Mapped[list["EndpointSubscription"]] = relationship(
         cascade="all, delete-orphan", lazy="selectin", order_by="EndpointSubscription.event_type"

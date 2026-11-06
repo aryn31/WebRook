@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, MAX_ATTEMPTS_DEFAULT, type EndpointWithHealth, type EndpointWithSecret } from "@/lib/api";
 import { HealthBadge } from "@/components/EndpointHealth";
+import { SecurityBadge } from "@/components/SecurityCheck";
 import { EventTypeList, EventTypesInput } from "@/components/EventTypesInput";
 import { MaxAttemptsInput, maxAttemptsError } from "@/components/MaxAttemptsInput";
 import { useMe } from "@/components/MeContext";
@@ -216,6 +217,7 @@ export default function EndpointsPage() {
                     <div className="ep-card-top">
                       <span className="ep-card-dot" aria-hidden />
                       <span className="ep-card-name">{e.description || new URL(e.url).host}</span>
+                      <SecurityBadge check={e.security_check} />
                       {e.enabled ? <span className="badge badge-green">Enabled</span> : <span className="badge badge-grey">Disabled</span>}
                     </div>
                     <div className="ep-card-url mono" title={e.url}>{e.url}</div>

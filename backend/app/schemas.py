@@ -355,6 +355,8 @@ class EndpointOut(BaseModel):
     previous_secret_expires_at: datetime | None = None
     # When the "endpoint is failing" email went out for the current run of failures; null once it recovers.
     alert_sent_at: datetime | None = None
+    # Last receiver security check: {verdict: pass|partial|fail|inconclusive, summary, checked_at, probes: [...]}.
+    security_check: dict | None = None
     created_at: datetime
     updated_at: datetime
 

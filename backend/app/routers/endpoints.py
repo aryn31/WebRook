@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Response
 from sqlalchemy import case, func, literal, select, update
 
-from app import audit
+from app import audit, ratelimit, security_check
 from app.config import get_settings
 from app.deps import DB, CurrentPrincipal, EndpointsRead, EndpointsWrite
 from app.errors import ApiError, not_found
@@ -156,6 +156,7 @@ def update_endpoint(endpoint_id: str, body: EndpointPatch, principal: EndpointsW
         url = _check_url(body.url)
         if url != endpoint.url:
             changes["url"] = {"from": endpoint.url, "to": url}
+            endpoint.security_check = None  # it checked the old URL
         endpoint.url = url
     if "description" in fields and body.description != endpoint.description:
         changes["description"] = {"from": endpoint.description, "to": body.description}
@@ -193,6 +194,31 @@ def archive_endpoint(endpoint_id: str, principal: EndpointsWrite, db: DB) -> Res
     audit.record(db, principal, "endpoint.archived", "endpoint", endpoint.id, {"url": endpoint.url})
     db.commit()
     return Response(status_code=204)
+
+
+SECURITY_CHECKS_PER_MINUTE = 6
+
+
+@router.post("/{endpoint_id}/security-check", response_model=EndpointOut)
+def run_security_check(endpoint_id: str, principal: EndpointsWrite, db: DB) -> Endpoint:
+    """Check whether the endpoint verifies signatures: send it one genuine and four forged test requests."""
+    endpoint = _get_owned(db, principal, endpoint_id)
+    ratelimit.enforce(f"security-check:{endpoint.id}", SECURITY_CHECKS_PER_MINUTE)
+    signing = [decrypt_secret(endpoint.secret_encrypted)]
+    if endpoint.previous_secret_encrypted and endpoint.previous_secret_expires_at and (
+        endpoint.previous_secret_expires_at > datetime.now(UTC)
+    ):
+        signing.append(decrypt_secret(endpoint.previous_secret_encrypted))
+    url = endpoint.url
+    db.commit()  # don't hold a transaction open while waiting on the endpoint
+    result = security_check.run(endpoint.id, url, signing)
+    endpoint = _get_owned(db, principal, endpoint_id)
+    if endpoint.url == url:  # unless the URL changed meanwhile
+        endpoint.security_check = result
+    audit.record(db, principal, "endpoint.security_checked", "endpoint", endpoint.id, {"verdict": result["verdict"]})
+    db.commit()
+    db.refresh(endpoint)
+    return endpoint
 
 
 def _secret_out(endpoint: Endpoint) -> dict:

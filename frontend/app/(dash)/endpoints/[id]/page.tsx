@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type Delivery, type Endpoint, type EndpointHealth, type EventAccepted } from "@/lib/api";
 import { Ring } from "@/components/Ring";
+import { SecurityBadge, SecurityCheckCard } from "@/components/SecurityCheck";
 import { EventTypeList, EventTypesInput } from "@/components/EventTypesInput";
 import { DeliveryTable } from "@/components/DeliveryTable";
 import { MaxAttemptsInput, maxAttemptsError } from "@/components/MaxAttemptsInput";
@@ -425,6 +426,7 @@ export default function EndpointDetailPage() {
         sub={
           <span className="row-wrap">
             {endpoint.enabled ? <span className="badge badge-green">Enabled</span> : <span className="badge badge-grey">Disabled</span>}
+            <SecurityBadge check={endpoint.security_check} />
             <span className="mono detail-url">{endpoint.url}</span>
             <CopyButton text={endpoint.url} label="Copy URL" />
           </span>
@@ -451,6 +453,10 @@ export default function EndpointDetailPage() {
       )}
 
       {health && !editing && <HealthCard health={health} alertSentAt={endpoint.alert_sent_at} />}
+
+      {!editing && (
+        <SecurityCheckCard endpoint={endpoint} canRun={canWrite} onChecked={(e) => setEndpoint(e)} />
+      )}
 
       <section className="card">
         <div className="card-head">

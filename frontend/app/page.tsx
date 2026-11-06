@@ -95,6 +95,10 @@ const FAQ = [
     a: "Delivery is at-least-once, so a receiver can very rarely see a duplicate. Every event and delivery has a stable ID to drop it. On your side, send an Idempotency-Key and retrying your own request never creates a second event.",
   },
   {
+    q: "How do I know my endpoint really checks signatures?",
+    a: "Click \"Check my endpoint\" on its page. HookFlow sends one genuine request and four forged ones (wrong secret, edited body, an old timestamp, no signature) and tells you which ones your server wrongly accepted, with code to fix it. Endpoints that pass get a \"Verified\" badge.",
+  },
+  {
     q: "Can my team use it?",
     a: "Yes. Invite people as admins, developers or viewers. Every key created, endpoint changed and secret revealed is in the audit log.",
   },
@@ -189,7 +193,7 @@ export default function LandingPage() {
               <Reveal className="bento-card" delay={80}>
                 <div className="bento-text">
                   <h3>Signed, every time</h3>
-                  <p>HMAC-SHA256 over the timestamp and body. Rotate secrets with zero downtime.</p>
+                  <p>HMAC-SHA256 over the timestamp and body, with zero-downtime rotation. One click checks that your endpoint actually verifies it.</p>
                 </div>
                 <pre className="viz-sig" aria-hidden>{`POST /hooks HTTP/1.1
 HookFlow-Event-Id: evt_01JD8…

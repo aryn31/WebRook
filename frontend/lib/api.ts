@@ -90,6 +90,8 @@ export type Endpoint = {
   previous_secret_expires_at: string | null;
   /** When the "endpoint is failing" email went out; null when it isn't failing. */
   alert_sent_at: string | null;
+  /** Last receiver security check, or null if never run (or the URL changed since). */
+  security_check: SecurityCheck | null;
   created_at: string;
   updated_at: string;
 };
@@ -116,6 +118,19 @@ export const MAX_ATTEMPTS_MAX = 10;
 export const MAX_ATTEMPTS_DEFAULT = 5;
 export const RETRY_SCHEDULE_MAX_ITEMS = 9;
 export const RETRY_DELAY_MAX_SECONDS = 86400;
+
+export type SecurityVerdict = "pass" | "partial" | "fail" | "inconclusive";
+export type SecurityProbe = {
+  name: "valid" | "wrong_signature" | "tampered_body" | "old_timestamp" | "missing_signature";
+  label: string;
+  expected: "accept" | "reject";
+  status_code: number | null;
+  error: string | null;
+  accepted: boolean;
+  ok: boolean;
+  server_error: boolean;
+};
+export type SecurityCheck = { verdict: SecurityVerdict; summary: string; checked_at: string; probes: SecurityProbe[] };
 
 export type SigningSecret = { signing_secret: string; previous_secret_expires_at: string | null };
 
@@ -570,6 +585,7 @@ export const api = {
     retry_schedule?: number[] | null;
   }) =>
     request<EndpointWithSecret>("POST", "/endpoints", { body }),
+  runSecurityCheck: (id: string) => request<Endpoint>("POST", `/endpoints/${encodeURIComponent(id)}/security-check`),
   getEndpoint: (id: string) => request<EndpointWithHealth>("GET", `/endpoints/${encodeURIComponent(id)}`),
   updateEndpoint: (
     id: string,

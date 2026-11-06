@@ -33,6 +33,21 @@ Each entry covers: what was built or changed, decisions made, how it was checked
   escaped. The mailer gained a `reply_to` option. The Privacy and Terms pages show the address too (was GitHub
   issues). Checked: 6 new tests (211 pass); a real send through the local stack (console mail mode, then back
   to Gmail); screenshots in dark, light and the sent state.
+- **Receiver security check** (recommendation B1 from the competitor research; no competitor offers it):
+  - "Check my endpoint" on each endpoint page sends five test requests at once: one genuine, plus wrong secret,
+    edited body, an hour-old timestamp and no signature. A safe endpoint accepts the first and rejects the rest.
+  - Verdicts: pass ("Verified" badge), partial (old requests accepted, so replays are possible), fail (forged
+    requests accepted), inconclusive. The card lists each test with what should have happened and what did, flags
+    5xx rejections (400/401 is better), and shows fix code for Node and Python on fail or partial.
+  - `POST /v1/endpoints/{id}/security-check` (endpoints:write, 6 per minute), `app/security_check.py`; uses the
+    same guarded sender as deliveries (private addresses stay blocked), signs with both secrets during rotation.
+    Result saved on the endpoint (migration `0008`), cleared when the URL changes; badge on endpoint cards too.
+  - The local test receiver gained `/secure` (rejects bad signatures with 401 when `RECEIVER_SECRET` is set).
+  - Home page: the signatures feature card and a new FAQ entry mention it.
+  - Checked: 9 new tests (220 pass), migration down and up, a live run (the strict receiver passed, the open one
+    failed), screenshots.
+  - How it works is written up in `docs/signatures.md` (signing, receiver checks, the five tests, verdicts,
+    internals, trying it locally, limits), linked from the README.
 - **Removed API-reference and GitHub links from the website:** top bar, footer, home page ("Read the API
   reference" → "See how delivery works"), Platform page (→ "Talk to us"), Contact shortcuts (→ "Common
   questions", linking to the home page FAQ). `DOCS_URL` and `REPO_URL` deleted. Checked every public page's HTML for

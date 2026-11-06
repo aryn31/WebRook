@@ -99,7 +99,7 @@ What this shows:
 
 ### B. Differentiators no one offers
 
-**B1. Receiver security check.** *Effort: about a day. Recommended first.*
+**B1. Receiver security check.** *Effort: about a day.* **Done (2026-11-06).**
 
 - A button on the endpoint page: "Check my endpoint".
 - HookFlow sends signed test requests: a valid one, then one with a wrong signature, an old timestamp and a

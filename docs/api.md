@@ -106,6 +106,16 @@ Body: `{ "code": "123456" }` → `200 { "user": User }`. `400 invalid_code` (wit
 Emails a new code; the previous one stops working. `429 resend_too_soon` within 60 seconds of the last code (with
 `Retry-After`), at most 5 per hour, `503 email_failed` if sending failed, `400 already_verified`.
 
+### `POST /v1/endpoints/{id}/security-check` (endpoints:write)
+Checks whether the endpoint verifies signatures. Sends five test requests at once (event type
+`hookflow.security_check`, header `HookFlow-Security-Check: <probe>`): `valid` (should be accepted), and
+`wrong_signature`, `tampered_body`, `old_timestamp` (an hour old) and `missing_signature` (all should be rejected).
+Any non-2xx answer counts as rejected. Returns the endpoint with `security_check`:
+`{ verdict, summary, checked_at, probes: [{ name, label, expected, status_code, error, accepted, ok, server_error }] }`.
+Verdicts: `pass`, `partial` (signature checked but old requests accepted), `fail` (forged requests accepted),
+`inconclusive` (the genuine request wasn't accepted, or some requests got no answer). Saved on the endpoint and
+cleared when its URL changes. 6 per minute per endpoint. Audit action `endpoint.security_checked`.
+
 ### `POST /v1/contact`
 The website's contact form; no login needed. Body: `{ "name", "email", "topic", "message", "website" }` →
 `202 { "message" }`. `topic` is `question`, `support`, `sales`, `bug` or `other`; `message` is 10–5000 characters;

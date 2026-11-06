@@ -224,6 +224,7 @@ export const AUDIT_LABEL: Record<string, string> = {
   "endpoint.archived": "Endpoint archived",
   "endpoint.secret_viewed": "Signing secret viewed",
   "endpoint.secret_rotated": "Signing secret rotated",
+  "endpoint.security_checked": "Signature check run",
   "delivery.replayed": "Delivery replayed",
   "event.replayed": "Event replayed",
   "deliveries.bulk_replayed": "Deliveries replayed in bulk",
@@ -259,6 +260,12 @@ export function auditSummary(log: AuditLog): string[] {
       }
       break;
     }
+    case "endpoint.security_checked":
+      if (typeof d.verdict === "string") {
+        const v: Record<string, string> = { pass: "Passed", partial: "Partly passed", fail: "Failed", inconclusive: "Inconclusive" };
+        return [`Result: ${v[d.verdict] ?? d.verdict}`];
+      }
+      break;
     case "endpoint.secret_rotated":
       if (typeof d.grace_period_seconds === "number") {
         return [d.grace_period_seconds > 0 ? `Old secret kept for ${formatSeconds(d.grace_period_seconds)}` : "Old secret revoked immediately"];

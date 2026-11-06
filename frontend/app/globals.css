@@ -1644,3 +1644,46 @@ html { transition: background-color 0.25s; }
   .contact { padding-top: 40px; }
   .contact-card { padding: 20px; }
 }
+
+/* receiver security check */
+.sec-badge {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 2px 8px 2px 7px;
+  border-radius: 999px; border: 1px solid transparent; white-space: nowrap;
+}
+.sec-pass { --sec: var(--status-delivered); --sec-bg: var(--bg-delivered); --sec-text: var(--text-delivered); }
+.sec-partial { --sec: var(--status-retrying); --sec-bg: var(--bg-retrying); --sec-text: var(--text-retrying); }
+.sec-fail { --sec: var(--status-failed); --sec-bg: var(--bg-failed); --sec-text: var(--text-failed); }
+.sec-inconclusive { --sec: var(--muted); --sec-bg: var(--surface-2); --sec-text: var(--text-2); }
+.sec-badge { background: var(--sec-bg); color: var(--sec-text); border-color: color-mix(in srgb, var(--sec) 35%, transparent); }
+.sec-card-fail { border-color: color-mix(in srgb, var(--status-failed) 40%, var(--border)); }
+.sec-intro { margin: -4px 0 16px; max-width: 60em; }
+.sec-verdict {
+  display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; border-radius: 12px; margin-bottom: 14px;
+  background: var(--sec-bg); border: 1px solid color-mix(in srgb, var(--sec) 30%, transparent);
+}
+.sec-verdict .sec-badge { margin-top: 2px; background: var(--surface); }
+.sec-verdict-title { font-weight: 600; color: var(--sec-text); margin-bottom: 2px; }
+.sec-verdict-body { font-size: 13px; color: var(--text-2); line-height: 1.55; }
+.sec-probes { list-style: none; margin: 0 0 14px; padding: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.sec-probe {
+  display: grid; grid-template-columns: 22px minmax(0, 1.4fr) 110px minmax(0, 1fr); gap: 12px; align-items: center;
+  padding: 10px 14px; border-top: 1px solid var(--border); font-size: 13px;
+}
+.sec-probe:first-child { border-top: 0; }
+.sec-probe-mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+.sec-probe-ok .sec-probe-mark { background: var(--bg-delivered); color: var(--status-delivered); }
+.sec-probe-bad { background: color-mix(in srgb, var(--bg-failed) 60%, transparent); }
+.sec-probe-bad .sec-probe-mark { background: var(--status-failed); color: #fff; }
+.sec-probe-running .sec-probe-mark { border: 1.5px solid var(--border-strong); border-top-color: var(--signal); animation: spin 0.7s linear infinite; }
+.sec-probe-expect { color: var(--muted); font-size: 12px; }
+.sec-probe-got { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sec-probe-bad .sec-probe-got { color: var(--text-failed); }
+.sec-note { font-size: 12.5px; color: var(--text-retrying); margin: 0 0 14px; }
+.sec-fix { margin-bottom: 14px; }
+.sec-fix-title { font-weight: 600; margin-bottom: 8px; }
+.sec-fix .codetabs-pre { min-height: 0; font-size: 12px; }
+.sec-actions { display: flex; align-items: center; gap: 12px; }
+@media (max-width: 700px) {
+  .sec-probe { grid-template-columns: 22px minmax(0, 1fr); }
+  .sec-probe-expect, .sec-probe-got { grid-column: 2; }
+}
