@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { API_PUBLIC_URL } from "@/lib/api";
-import { DOCS_URL, SiteFooter, SiteHeader } from "@/components/SiteChrome";
+import Link from "next/link";
+import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 import { AuthCta } from "@/components/AuthCta";
 import { CodeTabs } from "@/components/CodeTabs";
 import { HeroScene } from "@/components/HeroScene";
@@ -13,8 +14,6 @@ export const metadata: Metadata = {
   description:
     "Send an event to HookFlow once. It delivers it to every subscribed endpoint, signs it, retries failures and records every attempt.",
 };
-
-const DOCS = DOCS_URL;
 
 const SAMPLES = [
   {
@@ -262,9 +261,9 @@ HookFlow-Signature: `}<mark>v1=9f3c51…e07a</mark></pre>
               <h2 className="lp-h2 lp-h2-left">One request.<br /><em>That&apos;s the integration.</em></h2>
               <p className="lp-dev-lead">No SDK, any language. Add an endpoint, send events with an API key, and verify
                 the signature in your receiver.</p>
-              <a href={DOCS} target="_blank" rel="noreferrer" className="lp-textlink">
-                Read the API reference <IconArrow size={15} />
-              </a>
+              <Link href="/platform" className="lp-textlink">
+                See how delivery works <IconArrow size={15} />
+              </Link>
             </Reveal>
             <Reveal delay={100}>
               <CodeTabs samples={SAMPLES} />
@@ -273,7 +272,7 @@ HookFlow-Signature: `}<mark>v1=9f3c51…e07a</mark></pre>
         </section>
 
         {/* ---------- FAQ ---------- */}
-        <section className="lp-section lp-faq-section">
+        <section id="faq" className="lp-section lp-faq-section">
           <div className="lp-wrap lp-faq-grid">
             <Reveal>
               <p className="lp-kicker">Questions</p>

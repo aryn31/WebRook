@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { DOCS_URL } from "@/components/SiteChrome";
 
 /** Shortcuts beside the contact form. The password link depends on whether the visitor is logged in. */
 export function ContactLinks() {
@@ -16,7 +15,7 @@ export function ContactLinks() {
   return (
     <div className="contact-links">
       <div className="contact-links-title">Find an answer faster</div>
-      <a href={DOCS_URL} target="_blank" rel="noreferrer">API reference <span aria-hidden>↗</span></a>
+      <Link href="/#faq">Common questions</Link>
       <Link href="/platform">How HookFlow delivers</Link>
       <Link href="/#demo">Try the live demo</Link>
       {signedIn ? (

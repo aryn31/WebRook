@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { AuthCta } from "@/components/AuthCta";
 import { FlowDiagram } from "@/components/FlowDiagram";
-import { DOCS_URL, SiteFooter, SiteHeader } from "@/components/SiteChrome";
+import { SiteFooter, SiteHeader } from "@/components/SiteChrome";
 
 export const metadata: Metadata = {
   title: "Platform",
@@ -261,7 +262,7 @@ export default function PlatformPage() {
               <em>Send your first event.</em>
             </h2>
             <div className="lp-final-cta">
-              <AuthCta variant="final" secondary={<a href={DOCS_URL} target="_blank" rel="noreferrer" className="btn btn-lg lp-final-login">API reference</a>} />
+              <AuthCta variant="final" secondary={<Link href="/contact" className="btn btn-lg lp-final-login">Talk to us</Link>} />
             </div>
           </div>
         </section>

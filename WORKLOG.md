@@ -33,6 +33,10 @@ Each entry covers: what was built or changed, decisions made, how it was checked
   escaped. The mailer gained a `reply_to` option. The Privacy and Terms pages show the address too (was GitHub
   issues). Checked: 6 new tests (211 pass); a real send through the local stack (console mail mode, then back
   to Gmail); screenshots in dark, light and the sent state.
+- **Removed API-reference and GitHub links from the website:** top bar, footer, home page ("Read the API
+  reference" → "See how delivery works"), Platform page (→ "Talk to us"), Contact shortcuts (→ "Common
+  questions", linking to the home page FAQ). `DOCS_URL` and `REPO_URL` deleted. Checked every public page's HTML for
+  "API reference", "github" and docs links: none left. The code samples on the home page and API keys page stay.
 - **Fixed contact-page shortcuts:** "Reset your password" sent logged-in visitors to the dashboard (the reset page
   is for logged-out people). Logged-in visitors now see "Change your password" (→ Security). Internal links switch
   pages instantly instead of reloading. Clicked through all four, logged in and out.

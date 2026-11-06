@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { CONTACT_EMAIL, SiteFooter, SiteHeader } from "./SiteChrome";
 
-export const REPO_URL = "https://github.com/aryn31/WebRook";
 export const LEGAL_UPDATED = "4 November 2026";
 
 /** Contact for privacy and terms questions. */
