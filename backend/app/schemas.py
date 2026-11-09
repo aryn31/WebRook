@@ -128,6 +128,78 @@ class ContactOut(BaseModel):
     message: str
 
 
+# --- Customer portal ------------------------------------------------------------
+
+CONSUMER_UID = r"^[A-Za-z0-9][A-Za-z0-9._:@-]{0,99}$"
+
+
+class ConsumerIn(BaseModel):
+    # Your ID for this customer, e.g. "ana-bakery" or your database ID. Unique in your account.
+    uid: str = Field(pattern=CONSUMER_UID, description="Letters, digits and . _ : @ -, up to 100 characters.")
+    name: str | None = Field(default=None, max_length=200)
+
+
+class ConsumerPatch(BaseModel):
+    name: str | None = Field(default=None, max_length=200)
+
+
+class ConsumerOut(BaseModel):
+    id: str
+    uid: str
+    name: str | None
+    endpoint_count: int
+    created_at: datetime
+
+
+class PortalLinkIn(BaseModel):
+    # Shown at the top of the portal, e.g. your company name.
+    brand_name: str | None = Field(default=None, max_length=60)
+    ttl_minutes: int | None = Field(default=None, ge=5, le=1440)
+
+
+class PortalLinkOut(BaseModel):
+    url: str
+    token: str
+    expires_at: datetime
+
+
+class PortalEndpointIn(BaseModel):
+    url: str = Field(max_length=2048)
+    description: str | None = Field(default=None, max_length=500)
+    event_types: list[str] = ["*"]
+
+    @field_validator("event_types")
+    @classmethod
+    def _v_types(cls, v: list[str]) -> list[str]:
+        return _clean_event_types(v)
+
+
+class PortalEndpointPatch(BaseModel):
+    url: str | None = Field(default=None, max_length=2048)
+    description: str | None = Field(default=None, max_length=500)
+    event_types: list[str] | None = None
+    enabled: bool | None = None
+
+    @field_validator("event_types")
+    @classmethod
+    def _v_types(cls, v: list[str] | None) -> list[str] | None:
+        return None if v is None else _clean_event_types(v)
+
+
+class PortalConsumer(BaseModel):
+    id: str
+    uid: str
+    name: str | None
+
+
+class PortalMeOut(BaseModel):
+    consumer: PortalConsumer
+    brand_name: str | None
+    expires_at: datetime
+    # Event types this account has sent recently, to pick from when subscribing.
+    event_types: list[str]
+
+
 class PreferencesIn(BaseModel):
     failure_alerts: bool
 
@@ -345,6 +417,8 @@ class EndpointPatch(BaseModel):
 class EndpointOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
+    # The consumer that owns it (added in the customer portal), or null for the account's own endpoints.
+    consumer_id: str | None = None
     url: str
     description: str | None
     enabled: bool
@@ -407,6 +481,8 @@ class RotateSecretIn(BaseModel):
 class EventIn(BaseModel):
     event_type: str
     data: dict[str, Any]
+    # Send to one consumer's endpoints only (their uid or ID). Omitted: the account's own endpoints.
+    consumer: str | None = Field(default=None, min_length=1, max_length=100)
 
     @field_validator("event_type")
     @classmethod
@@ -434,6 +510,7 @@ class DeliveryCounts(BaseModel):
 class EventSummary(BaseModel):
     id: str
     event_type: str
+    consumer_id: str | None = None
     created_at: datetime
     deliveries: DeliveryCounts
 
@@ -484,7 +561,7 @@ class AttemptOut(BaseModel):
 
 
 class Actor(BaseModel):
-    type: Literal["session", "api_key"]
+    type: Literal["session", "api_key", "portal"]
     api_key_id: str | None = None
     # The person: the logged-in user, or the API key's creator. Null for older entries.
     user_id: str | None = None

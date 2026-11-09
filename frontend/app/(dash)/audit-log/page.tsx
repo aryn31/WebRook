@@ -23,6 +23,15 @@ function Actor({ log }: { log: AuditLog }) {
       </span>
     );
   }
+  if (log.actor.type === "portal") {
+    const consumer = typeof log.details?.consumer === "string" ? log.details.consumer : null;
+    return (
+      <span>
+        Customer portal
+        {consumer && <div className="muted small mono">{consumer}</div>}
+      </span>
+    );
+  }
   return (
     <span>
       Dashboard

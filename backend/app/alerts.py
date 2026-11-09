@@ -5,6 +5,9 @@ owner and admins (those who haven't turned alerts off) get one "endpoint is fail
 sent while it stays down. The next successful attempt resets the count and, if an alert went out, sends one
 "back to normal" email with how long it was down and how many deliveries failed meanwhile.
 
+Endpoints that belong to a consumer (customer portal) are skipped: a SaaS account may have thousands, and
+their consumers watch them in the portal.
+
 ``on_attempt`` runs inside the transaction that records the attempt, so the decision to alert is made exactly
 once even with many workers. The emails are sent by ``send`` after that transaction commits.
 """

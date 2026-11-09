@@ -50,6 +50,8 @@ All settings are environment variables. Only `SECRET_ENCRYPTION_KEY` is required
 | `ALERT_WORKER_SILENCE_SECONDS` | `120` | `/health/ready` reports the worker as `stale` after this |
 | `ALERT_AFTER_FAILURES` | `5` | Email owners and admins after this many failed attempts in a row to one endpoint, and again when it recovers. `0` turns alerts off. People can opt out on the Security page |
 | `SUPPORT_EMAIL` | `wendfolk02@gmail.com` | Where contact-form messages go (shown on the site as the support address) |
+| `MAX_ENDPOINTS_PER_CONSUMER` | `10` | Endpoints each customer-portal consumer may add |
+| `PORTAL_LINK_TTL_MINUTES` | `60` | Default lifetime of a portal link (5–1440 per link) |
 | `MAIL_BACKEND` | `console` | `console` (log emails, for development), `gmail`, `smtp` or `brevo`. See [Email](#email) |
 | `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | — | For `MAIL_BACKEND=gmail`; from `backend/scripts/gmail_token.py` |
 | `MAIL_FROM_EMAIL` / `MAIL_FROM_NAME` | `no-reply@hookflow.local` / `HookFlow` | Sender of verification emails |

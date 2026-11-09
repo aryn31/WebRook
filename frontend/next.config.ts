@@ -9,6 +9,20 @@ const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
+  // Only the customer portal may be shown inside another site (it's made to be embedded). Every other page refuses
+  // to be framed, so no site can trick a logged-in user into clicking dashboard buttons inside a hidden frame.
+  async headers() {
+    return [
+      { source: "/portal", headers: [{ key: "Content-Security-Policy", value: "frame-ancestors *" }] },
+      {
+        source: "/((?!portal$).*)",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${backendUrl}/:path*` }];
   },

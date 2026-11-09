@@ -73,8 +73,10 @@ export function SecurityBadge({ check }: { check: SecurityCheck | null }) {
   );
 }
 
-export function SecurityCheckCard({ endpoint, canRun, onChecked }: {
+export function SecurityCheckCard({ endpoint, canRun, onChecked, runCheck }: {
   endpoint: Endpoint; canRun: boolean; onChecked: (e: Endpoint) => void;
+  /** How to run it; defaults to the dashboard API. The customer portal passes its own. */
+  runCheck?: (id: string) => Promise<Endpoint>;
 }) {
   const [running, setRunning] = useState(false);
   const [err, setErr] = useState<unknown>(null);
@@ -84,7 +86,7 @@ export function SecurityCheckCard({ endpoint, canRun, onChecked }: {
     setRunning(true);
     setErr(null);
     try {
-      onChecked(await api.runSecurityCheck(endpoint.id));
+      onChecked(await (runCheck ?? api.runSecurityCheck)(endpoint.id));
     } catch (e) {
       setErr(e);
     } finally {

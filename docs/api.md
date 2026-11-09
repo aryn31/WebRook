@@ -289,6 +289,69 @@ During the grace period every request carries two signatures, one per secret:
 without rejecting anything. With `grace_period_seconds: 0` the old secret stops at once. Rotating again during a
 grace period replaces the old secret with the one being rotated out.
 
+## Customer portal
+
+For SaaS apps that send webhooks to their own customers. A **consumer** is one of your customers. Each gets a
+portal (a page you embed in your app) where they manage their own endpoints. They can never see your other
+consumers, your own endpoints or anything else in your account.
+
+### Consumers (endpoints:read to list and read, endpoints:write to change)
+
+- `POST /v1/consumers`: body `{ "uid", "name"? }`, returns `201 Consumer`. `uid` is your ID for them (letters,
+  digits and `. _ : @ -`, up to 100 characters), unique in your account; `409 consumer_exists` otherwise.
+- `GET /v1/consumers`: paginated.
+- `GET /v1/consumers/{ref}`: `ref` is the uid or the `cns_…` ID.
+- `PATCH /v1/consumers/{ref}`: body `{ "name" }`.
+- `DELETE /v1/consumers/{ref}`: deletes the consumer, deletes their endpoints and cancels anything not yet sent.
+  Open portal links stop working.
+
+`Consumer`: `{ id, uid, name, endpoint_count, created_at }`.
+
+### Sending to a consumer
+
+Add `"consumer": "<uid or ID>"` to `POST /v1/events`. The event goes only to that consumer's endpoints.
+
+- Events without `consumer` go only to your own endpoints, never to consumers'.
+- An unknown consumer gives `422 unknown_consumer`.
+- Events show `consumer_id`.
+- `GET /v1/endpoints` lists your own endpoints. Add `?consumer=<ref>` to list a consumer's instead.
+- Consumers' endpoints don't send you failure alerts.
+- Each consumer can have up to `MAX_ENDPOINTS_PER_CONSUMER` endpoints (default 10); this doesn't count toward
+  your account's limit.
+
+### `POST /v1/consumers/{ref}/portal` (endpoints:write)
+
+Body `{ "brand_name"?, "ttl_minutes"? }` (5–1440, default `PORTAL_LINK_TTL_MINUTES` = 60), returns
+`{ url, token, expires_at }`.
+
+- Create a link when the consumer opens the webhooks page in your app, then show `url` in an iframe or open it.
+- Anyone with the link can manage that consumer's endpoints until it expires, so don't store it or send it by
+  email.
+- The token is signed, not stored, and sits in the URL fragment, which browsers don't send to servers.
+- `brand_name` is shown at the top of the portal ("ShopCo webhooks").
+- The `/portal` page may be framed by any site; every other dashboard page refuses to be framed.
+
+### Portal API
+
+What the portal page calls, with `Authorization: Bearer hfp_…` (the portal token). It's limited to that one
+consumer and 120 requests per minute. A portal token doesn't work on any other route. An expired or forged token
+gives `401 portal_link_expired` or `portal_link_invalid`.
+
+| Route | Does |
+| --- | --- |
+| `GET /v1/portal/me` | The consumer, brand name, expiry, and event types sent recently (to pick from) |
+| `GET /v1/portal/endpoints` | Their endpoints, with health |
+| `POST /v1/portal/endpoints` | Add one: `{ url, description?, event_types? }` (default all); returns the signing secret |
+| `GET` / `PATCH` / `DELETE /v1/portal/endpoints/{id}` | Read; change `url`, `description`, `event_types`, `enabled`; delete |
+| `GET /v1/portal/endpoints/{id}/secret` | The signing secret |
+| `POST /v1/portal/endpoints/{id}/security-check` | The signature check |
+| `GET /v1/portal/endpoints/{id}/deliveries` | Recent deliveries to it, paginated |
+| `GET /v1/portal/deliveries/{id}/attempts` | A delivery's attempts |
+| `POST /v1/portal/deliveries/{id}/replay` | Replay a failed or cancelled delivery |
+
+Portal actions are recorded in your audit log with actor type `portal` and `details.consumer`. Audit actions:
+`consumer.created`, `consumer.updated`, `consumer.deleted`, `consumer.portal_opened`.
+
 ## Events
 
 ### `POST /v1/events`

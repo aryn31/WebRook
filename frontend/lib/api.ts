@@ -78,6 +78,8 @@ export type ApiKey = {
 
 export type Endpoint = {
   id: string;
+  /** Set when one of your consumers owns it (added in the customer portal). */
+  consumer_id?: string | null;
   url: string;
   description: string | null;
   enabled: boolean;
@@ -112,6 +114,10 @@ export type EndpointHealth = {
 
 /** Returned by the list and get routes. */
 export type EndpointWithHealth = Endpoint & { health: EndpointHealth };
+
+/** One of the account's own customers, who manages their endpoints in the customer portal. */
+export type Consumer = { id: string; uid: string; name: string | null; endpoint_count: number; created_at: string };
+export type PortalLink = { url: string; token: string; expires_at: string };
 
 export const MAX_ATTEMPTS_MIN = 1;
 export const MAX_ATTEMPTS_MAX = 10;
@@ -149,6 +155,8 @@ export type DeliveryCounts = {
 export type EventSummary = {
   id: string;
   event_type: string;
+  /** Set when the event was sent to one consumer. */
+  consumer_id?: string | null;
   created_at: string;
   deliveries: DeliveryCounts;
 };
@@ -205,7 +213,7 @@ export type Delivery = {
 };
 
 export type Actor = {
-  type: "session" | "api_key";
+  type: "session" | "api_key" | "portal";
   api_key_id: string | null;
   /** The person: logged-in user, or the API key's creator. Null on older entries. */
   user_id?: string | null;
@@ -585,6 +593,12 @@ export const api = {
     retry_schedule?: number[] | null;
   }) =>
     request<EndpointWithSecret>("POST", "/endpoints", { body }),
+  listConsumers: (q: { limit?: number; cursor?: string | null } = {}) =>
+    request<Page<Consumer>>("GET", "/consumers", { query: q }),
+  createConsumer: (uid: string, name: string | null) => request<Consumer>("POST", "/consumers", { body: { uid, name } }),
+  deleteConsumer: (ref: string) => request<void>("DELETE", `/consumers/${encodeURIComponent(ref)}`),
+  createPortalLink: (ref: string, body: { brand_name?: string | null; ttl_minutes?: number } = {}) =>
+    request<PortalLink>("POST", `/consumers/${encodeURIComponent(ref)}/portal`, { body }),
   runSecurityCheck: (id: string) => request<Endpoint>("POST", `/endpoints/${encodeURIComponent(id)}/security-check`),
   getEndpoint: (id: string) => request<EndpointWithHealth>("GET", `/endpoints/${encodeURIComponent(id)}`),
   updateEndpoint: (

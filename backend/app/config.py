@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     # Limits
     max_payload_bytes: int = 1024 * 1024
     max_endpoints_per_account: int = 50
+    # Customer portal: endpoints each consumer may add, and how long a portal link works.
+    max_endpoints_per_consumer: int = 10
+    portal_link_ttl_minutes: int = 60
     auth_rate_limit_per_minute: int = 10
     # Manual replays per account per minute. Each delivery replayed counts once.
     replay_rate_limit_per_minute: int = 60

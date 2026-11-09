@@ -6,7 +6,9 @@ from app.errors import install_error_handlers
 from app.logconfig import configure_logging
 from app.metrics import router as metrics_router
 from app.metrics import track_requests
-from app.routers import api_keys, audit_logs, auth, contact, deliveries, endpoints, events, health, stats, team, usage
+from app.routers import (
+    api_keys, audit_logs, auth, consumers, contact, deliveries, endpoints, events, health, portal, stats, team, usage,
+)
 
 configure_logging()
 
@@ -33,7 +35,8 @@ async def limit_body_size(request: Request, call_next):
     return await call_next(request)
 
 
-for r in (health, auth, api_keys, endpoints, events, deliveries, stats, usage, audit_logs, team, contact):
+for r in (health, auth, api_keys, endpoints, events, deliveries, stats, usage, audit_logs, team, contact, consumers,
+          portal):
     app.include_router(r.router)
 app.include_router(team.invites_router)
 app.include_router(metrics_router)

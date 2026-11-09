@@ -59,6 +59,17 @@ SDK tests run offline: `cd sdks/python && pytest`, and `cd sdks/node && npm inst
 Load test: [`loadtest/ingest.py`](loadtest/ingest.py); results and how to run it are in
 [docs/operations.md](docs/operations.md#capacity).
 
+## Demo data
+
+To fill a local copy with realistic demo accounts and 30 days of activity:
+
+```bash
+docker compose exec api python scripts/seed_demo.py          # --reset to recreate
+```
+
+Log in as `maya.demo@example.com` (password `demo-password-2026`) for the full demo. On a public server, set
+`DEMO_PASSWORD` first. The default is in this repository. See [backend/scripts/seed_demo.py](backend/scripts/seed_demo.py).
+
 ## Documentation
 
 - [docs/PRD.md](docs/PRD.md): product requirements v1.3, the original PRD plus the decisions made while building

@@ -138,11 +138,32 @@ class ApiKey(Base):
     user: Mapped[User] = relationship(lazy="joined", foreign_keys=[user_id])
 
 
+class Consumer(Base):
+    """One of an account's own customers, who manages their own endpoints in the customer portal.
+
+    ``uid`` is the account's ID for them (e.g. "ana-bakery"), unique within the account. Events sent with
+    ``consumer`` go only to that consumer's endpoints.
+    """
+
+    __tablename__ = "consumers"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("cns"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    uid: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = _now_col()
+    updated_at: Mapped[datetime] = _now_col(onupdate=func.now())
+
+    __table_args__ = (UniqueConstraint("user_id", "uid", name="uq_consumers_user_id_uid"),)
+
+
 class Endpoint(Base):
     __tablename__ = "endpoints"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("ep"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    # Set when one of the account's consumers owns it (added in the customer portal). NULL: the account's own.
+    consumer_id: Mapped[str | None] = mapped_column(ForeignKey("consumers.id", ondelete="SET NULL"), index=True)
     url: Mapped[str] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -191,6 +212,8 @@ class Event(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("evt"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     event_type: Mapped[str] = mapped_column(String(100))
+    # The consumer it was sent to (only their endpoints get it), or NULL for the account's own endpoints.
+    consumer_id: Mapped[str | None] = mapped_column(ForeignKey("consumers.id", ondelete="SET NULL"))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
     idempotency_key: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = _now_col()

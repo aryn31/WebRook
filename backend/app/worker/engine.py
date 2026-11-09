@@ -236,8 +236,9 @@ def _record(delivery_id: str, attempt_number: int, started: datetime, duration_m
                 success=o.success,
             )
         )
-        max_attempts, base, schedule, endpoint_id = db.execute(
-            select(Delivery.max_attempts, Delivery.retry_base_attempt, Endpoint.retry_schedule, Endpoint.id)
+        max_attempts, base, schedule, endpoint_id, consumer_id = db.execute(
+            select(Delivery.max_attempts, Delivery.retry_base_attempt, Endpoint.retry_schedule, Endpoint.id,
+                   Endpoint.consumer_id)
             .join(Endpoint, Endpoint.id == Delivery.endpoint_id)
             .where(Delivery.id == delivery_id)
         ).one()
@@ -275,7 +276,8 @@ def _record(delivery_id: str, attempt_number: int, started: datetime, duration_m
         else:
             if next_at is not None:
                 outbox.add(db, [delivery_id], available_at=next_at)
-            alert = alerts.on_attempt(db, endpoint_id, o.success, now)
+            if consumer_id is None:  # consumers' own endpoints don't email the account (see app/alerts.py)
+                alert = alerts.on_attempt(db, endpoint_id, o.success, now)
         db.commit()
     if alert is not None:
         alerts.send(alert)

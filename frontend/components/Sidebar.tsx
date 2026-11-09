@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, errorMessage, type SystemHealth } from "@/lib/api";
 import { Brand } from "./Brand";
-import { IconAudit, IconDeliveries, IconEndpoints, IconEvents, IconHome, IconKey, IconLogout, IconOverview, IconShield, IconTeam } from "./Icons";
+import { IconAudit, IconConsumers, IconDeliveries, IconEndpoints, IconEvents, IconHome, IconKey, IconLogout, IconOverview, IconShield, IconTeam } from "./Icons";
 import { accountLabel, ROLE_LABEL, useMe } from "./MeContext";
 import { ThemeToggle } from "./ThemeToggle";
 import { initials } from "./Avatar";
@@ -24,6 +24,7 @@ const NAV = [
     items: [
       { href: "/endpoints", label: "Endpoints", Icon: IconEndpoints },
       { href: "/api-keys", label: "API keys", Icon: IconKey },
+      { href: "/consumers", label: "Consumers", Icon: IconConsumers },
     ],
   },
   {

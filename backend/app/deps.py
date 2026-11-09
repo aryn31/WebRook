@@ -27,7 +27,7 @@ class Principal:
     """
 
     user: User
-    via: Literal["session", "api_key"]
+    via: Literal["session", "api_key", "portal"]  # "portal": a consumer in the customer portal
     session: UserSession | None = None
     api_key: ApiKey | None = None
     ip: str | None = None

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 // "/" and "/platform" are public marketing pages.
-const PUBLIC_PATHS = ["/", "/platform", "/login", "/register", "/forgot-password", "/privacy", "/terms", "/contact"];
+const PUBLIC_PATHS = ["/", "/platform", "/login", "/register", "/forgot-password", "/privacy", "/terms", "/contact", "/portal"];
 
 // Cheap gate only: the real auth check is the API answering 401 (lib/api.ts
 // then redirects to /login). Here we just avoid rendering the dashboard shell

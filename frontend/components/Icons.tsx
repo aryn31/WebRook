@@ -28,6 +28,9 @@ export const IconKey = (p: P) => (
 export const IconTeam = (p: P) => (
   <Svg {...p}><circle cx="9" cy="8.5" r="3.2" /><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0M15.5 5.6a3.2 3.2 0 0 1 0 5.8M17.5 14.4a5.5 5.5 0 0 1 3 5.1" /></Svg>
 );
+export const IconConsumers = (p: P) => (
+  <Svg {...p}><path d="M4 9.5 5.5 4h13L20 9.5M4 9.5h16M4 9.5v.5a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0v-.5M5.5 12.5V20h13v-7.5M10 20v-4.5h4V20" /></Svg>
+);
 export const IconShield = (p: P) => (
   <Svg {...p}><path d="M12 3 5 6v5.5c0 4.4 3 8 7 9.5 4-1.5 7-5.1 7-9.5V6l-7-3Z" /><path d="m9 12 2.2 2.2L15.5 10" /></Svg>
 );

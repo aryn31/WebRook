@@ -17,7 +17,7 @@ from app.config import get_settings
 from app.deps import DB, CurrentPrincipal, DeliveriesReplay, EventsRead, EventsWrite
 from app.errors import ApiError, not_found
 from app.ids import new_id
-from app.models import Delivery, DeliveryStatus, Endpoint, EndpointSubscription, Event, IdempotencyKey, User
+from app.models import Consumer, Delivery, DeliveryStatus, Endpoint, EndpointSubscription, Event, IdempotencyKey, User
 from app.pagination import Cursor, Limit, paginate
 from app.replay import enforce_rate_limit, replay, replay_out, why_not_replayable
 from app.routers.deliveries import delivery_out
@@ -107,7 +107,10 @@ class Ingested:
 
 def _request_hash(body: EventIn) -> str:
     """Fingerprint of the request. Key order and whitespace don't matter; values do."""
-    canonical = json.dumps({"event_type": body.event_type, "data": body.data}, sort_keys=True, separators=(",", ":"))
+    fields = {"event_type": body.event_type, "data": body.data}
+    if body.consumer is not None:
+        fields["consumer"] = body.consumer
+    canonical = json.dumps(fields, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
@@ -147,6 +150,18 @@ def _existing(db: Session, user_id: str, key: str, request_hash: str, now: datet
     return Ingested(event=event, delivery_count=count, outbox_ids=[], replayed=True)
 
 
+def _resolve_consumer(db: Session, user_id: str, ref: str | None) -> str | None:
+    """The consumer's ID for a uid or ID sent with an event."""
+    if ref is None:
+        return None
+    consumer_id = db.scalar(select(Consumer.id).where(Consumer.user_id == user_id,
+                                                      (Consumer.uid == ref) | (Consumer.id == ref)))
+    if consumer_id is None:
+        raise ApiError(422, f"No consumer '{ref}' in this account. Create it first with POST /v1/consumers.",
+                       code="unknown_consumer", details=[{"loc": ["body", "consumer"], "msg": "Unknown consumer."}])
+    return consumer_id
+
+
 def _ingest_once(db: Session, user_id: str, body: EventIn, key: str | None) -> Ingested:
     now = datetime.now(UTC)
     request_hash = _request_hash(body)
@@ -156,6 +171,7 @@ def _ingest_once(db: Session, user_id: str, body: EventIn, key: str | None) -> I
             db.commit()
             return existing
 
+    consumer_id = _resolve_consumer(db, user_id, body.consumer)
     endpoints = db.execute(
         select(Endpoint.id, Endpoint.max_attempts)
         .join(EndpointSubscription)
@@ -163,13 +179,15 @@ def _ingest_once(db: Session, user_id: str, body: EventIn, key: str | None) -> I
             Endpoint.user_id == user_id,
             Endpoint.enabled.is_(True),
             Endpoint.archived_at.is_(None),
+            # A consumer's event goes only to their endpoints; other events only to the account's own.
+            Endpoint.consumer_id == consumer_id if consumer_id else Endpoint.consumer_id.is_(None),
             EndpointSubscription.event_type.in_(matching_subscriptions(body.event_type)),
         )
         .distinct()
     ).all()
 
     event = Event(
-        id=new_id("evt"), user_id=user_id, event_type=body.event_type, payload=body.data,
+        id=new_id("evt"), user_id=user_id, event_type=body.event_type, payload=body.data, consumer_id=consumer_id,
         idempotency_key=key, created_at=now,
     )
     db.add(event)
@@ -318,7 +336,8 @@ def list_events(
     events, next_cursor = paginate(db, stmt, Event.id, limit, cursor)
     counts = _counts(db, [e.id for e in events])
     data = [
-        EventSummary(id=e.id, event_type=e.event_type, created_at=e.created_at, deliveries=counts[e.id])
+        EventSummary(id=e.id, event_type=e.event_type, consumer_id=e.consumer_id, created_at=e.created_at,
+                     deliveries=counts[e.id])
         for e in events
     ]
     return {"data": data, "next_cursor": next_cursor}
@@ -328,7 +347,7 @@ def list_events(
 def get_event(event_id: str, principal: EventsRead, db: DB) -> EventOut:
     e = _owned_event(db, principal, event_id)
     return EventOut(
-        id=e.id, event_type=e.event_type, created_at=e.created_at, data=e.payload,
+        id=e.id, event_type=e.event_type, consumer_id=e.consumer_id, created_at=e.created_at, data=e.payload,
         idempotency_key=e.idempotency_key, deliveries=_counts(db, [e.id])[e.id],
     )
 

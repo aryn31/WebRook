@@ -6,6 +6,55 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-07 — Customer portal
+
+### Done
+- **Customer portal** (recommendation A2; the main gap against Svix). Lets a SaaS app give each of its own
+  customers a page to manage the webhooks it sends them.
+  - **Consumers:** `POST/GET/PATCH/DELETE /v1/consumers` (uid is the app's own ID, e.g. `ana-bakery`). Migration
+    `0009`: `consumers` table; `consumer_id` on endpoints and events.
+  - **Routing:** events sent with `"consumer"` go only to that consumer's endpoints. Events without it go only to
+    the account's own endpoints (so internal events never leak to customers). Unknown consumer → 422.
+    `GET /v1/endpoints` shows the account's own endpoints; `?consumer=` shows a consumer's. Consumers' endpoints
+    have their own limit (10 each) and don't send failure alerts.
+  - **Portal links:** `POST /v1/consumers/{ref}/portal` returns a signed, expiring link (`app/portal.py`; default 60
+    minutes, optional brand name). The token rides in the URL fragment and is sent as `Bearer hfp_…`.
+  - **Portal API** (`app/routers/portal.py`, `/v1/portal/*`): list/add/change/delete endpoints, signing secret,
+    signature check, deliveries, attempts, replay. Every query is scoped to the token's account and consumer.
+    Actions go in the account's audit log as actor "portal". Endpoint create/archive/security-check logic is
+    shared with the dashboard (helpers in `app/routers/endpoints.py`).
+  - **Dashboard:** new "Consumers" page (Configure section) with a how-it-works guide (curl for each step and an
+    iframe snippet), add consumer, open portal / copy link, delete. Audit log shows "Customer portal" actions.
+  - **Portal page** (`/portal`, `app/portal/PortalApp.tsx`): standalone, embeddable, branded ("ShopCo webhooks" ·
+    consumer name), light/dark, endpoint cards with health, add endpoint (with event types the account sends),
+    endpoint page with health, secret, signature check and deliveries with attempts and replay.
+  - **Security:** `/portal` may be framed by any site; every other page now sends `X-Frame-Options: DENY` and
+    `frame-ancestors 'none'` (stops clickjacking of the dashboard, which had no framing protection before).
+  - Checked: 13 new tests in `tests/test_portal.py`, including isolation (a consumer can't read, change, delete,
+    check or replay another consumer's or the account's endpoints and deliveries; portal tokens don't work on other
+    routes; forged and expired tokens; another account can't use the consumers). All 233 tests pass; migration
+    down and up. Live run: consumer created, portal link opened, endpoints added in the portal, events with
+    `consumer` delivered only to them (and `order.*` filtering worked), framing headers checked, screenshots of
+    the portal embedded in a mock ShopCo page (light and dark) and of the Consumers page.
+  - Docs: `docs/api.md` (Customer portal section), `docs/operations.md` (two settings), competitive analysis A2
+    marked done.
+- **Demo data** (`backend/scripts/seed_demo.py`): six demo users and 30 days of history, written straight to the
+  database with backdated, time-ordered IDs, all finished, so the worker never sends to the made-up URLs.
+  - Accounts:
+    - `maya.demo@example.com` owns "Northwind", with a team (Alex admin, Priya developer, Sam viewer) and 4 API
+      keys, one of them revoked.
+    - Northwind's 5 endpoints each show a different state: healthy; degraded, with a 2-hour outage two days ago;
+      healthy and added 12 days ago; failing on 404 since yesterday, with an alert sent; and disabled.
+    - Northwind also has signature-check results, 6 merchants in the customer portal (one broken for 3 days),
+      replays and an audit trail.
+    - `jordan.demo@example.org` owns "Acme Analytics", where Maya is a developer, so the account switcher shows.
+    - `new.demo@example.net` is a brand-new, empty account.
+  - About 5,900 events, 8,900 deliveries and 9,400 attempts. Loads in about 3 seconds; `--reset` recreates it.
+    It only touches those emails, all on example.com/.org/.net.
+  - The password defaults to `demo-password-2026`. Set `DEMO_PASSWORD` when seeding a public server.
+  - Loaded locally and checked: the stats, each endpoint's health state, and screenshots of every page. README
+    has a "Demo data" section.
+
 ## 2026-11-06 — Public pages and unverified sign-ups
 
 ### Done

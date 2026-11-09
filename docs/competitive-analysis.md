@@ -83,7 +83,7 @@ What this shows:
 - Receivers can then use the official Standard Webhooks libraries.
 - It also makes switching from Svix easy, because receivers' verification code keeps working.
 
-**A2. Customer portal.** *Effort: about a week.*
+**A2. Customer portal.** *Effort: about a week.* **Done (2026-11-07).**
 
 - A HookFlow customer creates a "consumer" (one of their own customers) and gets a signed, expiring link to a
   small page.

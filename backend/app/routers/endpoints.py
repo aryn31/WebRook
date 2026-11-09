@@ -1,14 +1,14 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Response
+from fastapi import APIRouter, Body, Query, Response
 from sqlalchemy import case, func, literal, select, update
 
 from app import audit, ratelimit, security_check
 from app.config import get_settings
 from app.deps import DB, CurrentPrincipal, EndpointsRead, EndpointsWrite
 from app.errors import ApiError, not_found
-from app.models import Delivery, DeliveryAttempt, DeliveryStatus, Endpoint, EndpointSubscription
+from app.models import Consumer, Delivery, DeliveryAttempt, DeliveryStatus, Endpoint, EndpointSubscription
 from app.pagination import Cursor, Limit, paginate
 from app.schemas import (
     EndpointCreated,
@@ -101,44 +101,73 @@ def _health(db: DB, endpoint_ids: list[str]) -> dict[str, dict]:
     return out
 
 
+def with_health(db, endpoints: list[Endpoint]) -> list[dict]:
+    health = _health(db, [e.id for e in endpoints])
+    return [{**EndpointOut.model_validate(e).model_dump(), "health": health[e.id]} for e in endpoints]
+
+
 @router.get("", response_model=Page[EndpointWithHealth])
-def list_endpoints(principal: EndpointsRead, db: DB, limit: Limit = 25, cursor: Cursor = None) -> dict:
+def list_endpoints(
+    principal: EndpointsRead, db: DB, limit: Limit = 25, cursor: Cursor = None,
+    consumer: Annotated[str | None, Query(description="A consumer's uid or ID: list their endpoints instead of "
+                                                       "the account's own.")] = None,
+) -> dict:
     stmt = select(Endpoint).where(Endpoint.user_id == principal.user.id, Endpoint.archived_at.is_(None))
+    if consumer is None:
+        stmt = stmt.where(Endpoint.consumer_id.is_(None))
+    else:
+        c = db.scalar(select(Consumer).where(Consumer.user_id == principal.user.id,
+                                             (Consumer.id == consumer) | (Consumer.uid == consumer)))
+        if c is None:
+            raise not_found("Consumer")
+        stmt = stmt.where(Endpoint.consumer_id == c.id)
     data, next_cursor = paginate(db, stmt, Endpoint.id, limit, cursor)
-    health = _health(db, [e.id for e in data])
-    rows = [{**EndpointOut.model_validate(e).model_dump(), "health": health[e.id]} for e in data]
-    return {"data": rows, "next_cursor": next_cursor}
+    return {"data": with_health(db, data), "next_cursor": next_cursor}
 
 
-@router.post("", status_code=201, response_model=EndpointCreated)
-def create_endpoint(body: EndpointIn, principal: EndpointsWrite, db: DB) -> dict:
-    url = _check_url(body.url)
+def create(db, principal, *, url: str, description: str | None, event_types: list[str], enabled: bool = True,
+           max_attempts: int | None = None, retry_schedule: list[int] | None = None,
+           consumer: Consumer | None = None) -> dict:
+    """Add an endpoint for the account, or for one of its consumers. Returns it with its signing secret."""
+    url = _check_url(url)
+    s = get_settings()
+    scope = Endpoint.consumer_id == consumer.id if consumer else Endpoint.consumer_id.is_(None)
     count = db.scalar(
-        select(func.count()).where(Endpoint.user_id == principal.user.id, Endpoint.archived_at.is_(None))
+        select(func.count()).where(Endpoint.user_id == principal.user.id, Endpoint.archived_at.is_(None), scope)
     )
-    limit = get_settings().max_endpoints_per_account
+    limit = s.max_endpoints_per_consumer if consumer else s.max_endpoints_per_account
     if (count or 0) >= limit:
-        raise ApiError(409, f"Accounts can have at most {limit} endpoints.", code="endpoint_limit_reached")
+        who = "Each consumer" if consumer else "Accounts"
+        raise ApiError(409, f"{who} can have at most {limit} endpoints.", code="endpoint_limit_reached")
 
     secret = new_signing_secret()
     endpoint = Endpoint(
         user_id=principal.user.id,
+        consumer_id=consumer.id if consumer else None,
         url=url,
-        description=body.description,
-        enabled=body.enabled,
-        max_attempts=body.max_attempts or get_settings().delivery_max_attempts,
-        retry_schedule=body.retry_schedule,
+        description=description,
+        enabled=enabled,
+        max_attempts=max_attempts or s.delivery_max_attempts,
+        retry_schedule=retry_schedule,
         secret_encrypted=encrypt_secret(secret),
-        subscriptions=[EndpointSubscription(event_type=t) for t in body.event_types],
+        subscriptions=[EndpointSubscription(event_type=t) for t in event_types],
     )
     db.add(endpoint)
     db.flush()
-    audit.record(db, principal, "endpoint.created", "endpoint", endpoint.id,
-                 {"url": url, "event_types": body.event_types, "max_attempts": endpoint.max_attempts,
-                  "retry_schedule": body.retry_schedule})
+    details = {"url": url, "event_types": event_types, "max_attempts": endpoint.max_attempts,
+               "retry_schedule": retry_schedule}
+    if consumer:
+        details["consumer"] = consumer.uid
+    audit.record(db, principal, "endpoint.created", "endpoint", endpoint.id, details)
     db.commit()
     db.refresh(endpoint)
     return {**EndpointOut.model_validate(endpoint).model_dump(), "signing_secret": secret}
+
+
+@router.post("", status_code=201, response_model=EndpointCreated)
+def create_endpoint(body: EndpointIn, principal: EndpointsWrite, db: DB) -> dict:
+    return create(db, principal, url=body.url, description=body.description, event_types=body.event_types,
+                  enabled=body.enabled, max_attempts=body.max_attempts, retry_schedule=body.retry_schedule)
 
 
 @router.get("/{endpoint_id}", response_model=EndpointWithHealth)
@@ -187,13 +216,17 @@ def update_endpoint(endpoint_id: str, body: EndpointPatch, principal: EndpointsW
 
 @router.delete("/{endpoint_id}", status_code=204)
 def archive_endpoint(endpoint_id: str, principal: EndpointsWrite, db: DB) -> Response:
-    endpoint = _get_owned(db, principal, endpoint_id)
+    archive(db, principal, _get_owned(db, principal, endpoint_id))
+    db.commit()
+    return Response(status_code=204)
+
+
+def archive(db, principal, endpoint: Endpoint) -> None:
+    """Delete (archive) an endpoint and cancel what it hadn't been sent yet. The caller commits."""
     endpoint.archived_at = datetime.now(UTC)
     endpoint.enabled = False
     _cancel_unsent(db, endpoint.id, "Cancelled because the endpoint was deleted.")
     audit.record(db, principal, "endpoint.archived", "endpoint", endpoint.id, {"url": endpoint.url})
-    db.commit()
-    return Response(status_code=204)
 
 
 SECURITY_CHECKS_PER_MINUTE = 6
@@ -203,6 +236,12 @@ SECURITY_CHECKS_PER_MINUTE = 6
 def run_security_check(endpoint_id: str, principal: EndpointsWrite, db: DB) -> Endpoint:
     """Check whether the endpoint verifies signatures: send it one genuine and four forged test requests."""
     endpoint = _get_owned(db, principal, endpoint_id)
+    return check_security(db, principal, endpoint, lambda: _get_owned(db, principal, endpoint_id))
+
+
+def check_security(db, principal, endpoint: Endpoint, reload) -> Endpoint:
+    """Run the receiver security check and save the result. ``reload`` fetches the endpoint again afterwards."""
+    endpoint_id = endpoint.id
     ratelimit.enforce(f"security-check:{endpoint.id}", SECURITY_CHECKS_PER_MINUTE)
     signing = [decrypt_secret(endpoint.secret_encrypted)]
     if endpoint.previous_secret_encrypted and endpoint.previous_secret_expires_at and (
@@ -211,8 +250,8 @@ def run_security_check(endpoint_id: str, principal: EndpointsWrite, db: DB) -> E
         signing.append(decrypt_secret(endpoint.previous_secret_encrypted))
     url = endpoint.url
     db.commit()  # don't hold a transaction open while waiting on the endpoint
-    result = security_check.run(endpoint.id, url, signing)
-    endpoint = _get_owned(db, principal, endpoint_id)
+    result = security_check.run(endpoint_id, url, signing)
+    endpoint = reload()
     if endpoint.url == url:  # unless the URL changed meanwhile
         endpoint.security_check = result
     audit.record(db, principal, "endpoint.security_checked", "endpoint", endpoint.id, {"verdict": result["verdict"]})
