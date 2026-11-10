@@ -431,6 +431,8 @@ class EndpointOut(BaseModel):
     alert_sent_at: datetime | None = None
     # Last receiver security check: {verdict: pass|partial|fail|inconclusive, summary, checked_at, probes: [...]}.
     security_check: dict | None = None
+    # "standard": the signing secret works with Standard Webhooks libraries. "legacy": made before that; rotate it.
+    secret_format: Literal["standard", "legacy"] = "standard"
     created_at: datetime
     updated_at: datetime
 

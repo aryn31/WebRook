@@ -76,7 +76,7 @@ What this shows:
 
 ### A. Close the must-have gaps
 
-**A1. Standard Webhooks signatures.** *Effort: about a day.*
+**A1. Standard Webhooks signatures.** *Effort: about a day.* **Done (2026-11-10).**
 
 - Also send `webhook-id`, `webhook-timestamp` and `webhook-signature` (with `whsec_` secrets), keeping the
   current `HookFlow-*` headers so nothing breaks.

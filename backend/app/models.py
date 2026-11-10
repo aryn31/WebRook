@@ -195,6 +195,14 @@ class Endpoint(Base):
     def event_types(self) -> list[str]:
         return [s.event_type for s in self.subscriptions]
 
+    @property
+    def secret_format(self) -> str:
+        """ "standard" if Standard Webhooks libraries can use the signing secret, "legacy" for older secrets."""
+        from app.security import decrypt_secret
+        from app.signing import is_standard_secret
+
+        return "standard" if is_standard_secret(decrypt_secret(self.secret_encrypted)) else "legacy"
+
 
 class EndpointSubscription(Base):
     __tablename__ = "endpoint_subscriptions"

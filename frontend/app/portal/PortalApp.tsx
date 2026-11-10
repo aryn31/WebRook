@@ -8,6 +8,7 @@ import { HealthBadge } from "@/components/EndpointHealth";
 import { EventTypeList, EventTypesInput } from "@/components/EventTypesInput";
 import { SecurityBadge, SecurityCheckCard } from "@/components/SecurityCheck";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { SignatureHelp } from "@/components/SignatureHelp";
 import { ConfirmButton, CopyButton, Empty, ErrorBox, Loading, SecretBox, StatusPill, Time } from "@/components/ui";
 
 type View = { kind: "list" } | { kind: "new" } | { kind: "endpoint"; id: string };
@@ -162,7 +163,7 @@ function NewEndpoint({ client, me, onDone, onError }: {
       <section className="card portal-narrow">
         <div className="card-head"><h2>Endpoint added</h2></div>
         <SecretBox title="Signing secret" value={created.signing_secret}
-          warning="Store this on your server and use it to verify the HookFlow-Signature header on every request. You can view it again later on the endpoint's page." />
+          warning="Store this on your server and verify every request with it, using any Standard Webhooks library or the HookFlow-Signature header. You can view it again later on the endpoint's page." />
         <div className="row mt">
           <button type="button" className="btn btn-primary" onClick={() => onDone(created.id)}>Open endpoint</button>
           <button type="button" className="btn" onClick={() => onDone(null)}>Back to endpoints</button>
@@ -264,7 +265,7 @@ function EndpointView({ client, id, onBack, onError }: {
 
       <section className="card">
         <div className="card-head"><h2>Signing secret</h2></div>
-        <p className="muted small">Verify the <code className="mono">HookFlow-Signature</code> header on every request with this secret: HMAC-SHA256 of <code className="mono">{"{timestamp}.{raw body}"}</code>.</p>
+        <SignatureHelp format={e.secret_format} />
         <div className="secret-row">
           <code className="mono secret-value">{secret ?? "whsec_••••••••••••••••••••••••"}</code>
           {secret ? <CopyButton text={secret} /> : (

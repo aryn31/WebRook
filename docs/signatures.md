@@ -37,6 +37,22 @@ secret, gives a completely different result. With secret `whsec_demo123`:
 | `total` changed from 4999 to 1 | `v1=0a69370c…b467` |
 | Signed with a guessed secret | `v1=d86bcc5c…d7cd` |
 
+**Standard Webhooks headers.** Every request is also signed the
+[Standard Webhooks](https://www.standardwebhooks.com) way, with the same secret and timestamp:
+
+```
+webhook-id: evt_01JD8…            (the event ID, the same on every retry)
+webhook-timestamp: 1793612400
+webhook-signature: v1,K5oZfzN95Z9UVu1EsfQmfVNQhnkZ2pj9o9NDN/H/pI4=
+```
+
+The signed text is `{webhook-id}.{webhook-timestamp}.{body}`, base64-encoded. The HMAC key is the base64-decoded
+part of the secret after `whsec_`. The official Standard Webhooks libraries verify this in one call.
+
+Secrets are `whsec_` plus standard base64 of 24 random bytes. Secrets made before 2026-11-10 used base64url, which
+strict libraries reject. The dashboard flags them as legacy, and rotating fixes it. HookFlow's own header works with
+either kind.
+
 **Secret rotation.** After "Rotate" on an endpoint, requests carry two signatures for the grace period:
 `v1=<new>,v1=<old>`. Receivers keep working until they switch to the new secret.
 
@@ -62,7 +78,15 @@ The receiver needs the endpoint's signing secret, stored as an environment varia
 Also skip duplicates. Delivery is at-least-once, so store each `HookFlow-Event-Id` you've handled and ignore
 repeats.
 
-The SDKs do all of this in one call:
+The easiest way is a [Standard Webhooks](https://www.standardwebhooks.com) library, which checks the
+`webhook-*` headers, including the timestamp:
+
+```js
+import { Webhook } from "standardwebhooks";
+const event = new Webhook(process.env.HOOKFLOW_WEBHOOK_SECRET).verify(rawBody, req.headers);
+```
+
+The HookFlow SDKs check the `HookFlow-*` headers instead, also in one call:
 
 ```js
 import { verify } from "hookflow";
@@ -90,7 +114,9 @@ also appears as a badge next to the endpoint's name and on the Endpoints list.
 ### The five test requests
 
 HookFlow sends these at the same time. Each one has event type `hookflow.security_check` and a
-`HookFlow-Security-Check: <name>` header, so the receiver can recognise and ignore them.
+`HookFlow-Security-Check: <name>` header, so the receiver can recognise and ignore them. Each request carries both
+signature styles (HookFlow and Standard Webhooks), forged the same way, so the check works whichever one the
+receiver verifies.
 
 | Name | What's sent | A safe endpoint should |
 |---|---|---|

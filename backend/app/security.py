@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import secrets
@@ -59,7 +60,8 @@ def constant_time_equals(a: str, b: str) -> bool:
 # --- Signing secrets (encrypted at rest) ------------------------------------
 
 def new_signing_secret() -> str:
-    return f"whsec_{secrets.token_urlsafe(32)}"
+    # Standard Webhooks format: "whsec_" + standard base64 of random bytes (see app/signing.py).
+    return "whsec_" + base64.b64encode(secrets.token_bytes(24)).decode()
 
 
 @lru_cache

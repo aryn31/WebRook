@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { api, ApiError, type Delivery, type Endpoint, type EndpointHealth, type EventAccepted } from "@/lib/api";
 import { Ring } from "@/components/Ring";
+import { SignatureHelp } from "@/components/SignatureHelp";
 import { SecurityBadge, SecurityCheckCard } from "@/components/SecurityCheck";
 import { EventTypeList, EventTypesInput } from "@/components/EventTypesInput";
 import { DeliveryTable } from "@/components/DeliveryTable";
@@ -195,10 +196,7 @@ function SecretSection({
       <div className="card-head">
         <h2>Signing secret</h2>
       </div>
-      <p className="muted small">
-        Use this secret to verify the <code className="mono">HookFlow-Signature</code> header: HMAC-SHA256 of{" "}
-        <code className="mono">{"{timestamp}.{raw body}"}</code>.
-      </p>
+      <SignatureHelp format={endpoint.secret_format} />
 
       {graceActive && !rotated && (
         <div className="alert alert-info mb">

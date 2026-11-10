@@ -6,6 +6,42 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-10 — Standard Webhooks signatures
+
+### Done
+- **Standard Webhooks signatures** (recommendation A1).
+  - Every delivery now also carries `webhook-id` (the event ID, the same on every retry and replay),
+    `webhook-timestamp` and `webhook-signature` (`v1,<base64>` over `{id}.{timestamp}.{body}`, keyed with the
+    base64-decoded secret). During a rotation, both secrets sign, separated by a space.
+  - The existing `HookFlow-*` headers are unchanged. All of this is in `app/signing.py` (`signature_headers`).
+  - New secrets are `whsec_` plus standard base64 of 24 bytes, which every library accepts. Older (base64url)
+    secrets show `secret_format: "legacy"`, with a "rotate it" notice on the endpoint page and in the portal.
+  - The signature check's forged requests break both signature styles, so it tests either kind of receiver. Its
+    fix instructions now start with a Standard Webhooks library example.
+  - Home page: the signatures card shows the `webhook-*` headers, and the FAQ names the official libraries
+    (checked: C#, Elixir, Go, Java, JavaScript, PHP, Python, Ruby, Rust).
+  - Checked: 6 new tests in `tests/test_standard_webhooks.py` using the official `standardwebhooks` Python library
+    (added to `requirements-dev.txt`):
+    - real deliveries verify with it, and a wrong secret fails;
+    - `webhook-id` stays the same across retries;
+    - both secrets verify during a rotation;
+    - legacy secrets are flagged, and rotating fixes them;
+    - the signature check passes a receiver that uses the library;
+    - our signatures match the library's byte for byte.
+  - All 239 tests pass. Screenshots of the endpoint page (legacy notice, new fix tab).
+  - Docs: `docs/api.md` and `docs/signatures.md`. Competitive analysis A1 marked done.
+- Re-seeded the local demo data so its "last 24 hours" figures are current.
+
+## 2026-11-09 — Pushed; Render not deploying
+
+- Committed and pushed the customer portal and demo data (`71295d8`). GitHub checks and the Vercel deploy passed.
+- **Render is stuck on the Nov 5 code** (it has forgot-password but not the contact form, alerts, signature check
+  or portal): nothing since `8bb269d` (Nov 6) has deployed. A fresh no-cache production build of the latest code
+  boots fine with `start.sh` and migrates a Nov-5-state database through 0007–0009, so the code isn't the cause.
+  Next step is on Render: check the service's Events for failed or skipped deploys, check auto-deploy and branch
+  settings, or use Manual Deploy → "Deploy latest commit". Until then, the live contact form, Consumers page,
+  signature check and alert switch fail, because the website calls API routes Render doesn't have yet.
+
 ## 2026-11-07 — Customer portal
 
 ### Done

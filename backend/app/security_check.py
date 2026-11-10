@@ -12,13 +12,14 @@ Any non-2xx answer counts as rejected. A 4xx is ideal; a 5xx is reported because
 Requests go through the same guarded sender as real deliveries, so private addresses stay blocked.
 """
 
+import base64
 import json
 import secrets
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
-from app.signing import sign
+from app.signing import signature_headers
 from app.worker.engine import Outcome, send
 
 EVENT_TYPE = "hookflow.security_check"
@@ -51,27 +52,28 @@ def _body(probe: str, now: datetime) -> bytes:
 
 
 def _request(probe: str, endpoint_id: str, signing_secrets: list[str]) -> tuple[bytes, dict[str, str]]:
+    """One test request, signed both ways (HookFlow and Standard Webhooks), so either kind of receiver is tested."""
     now = datetime.now(UTC)
     ts = int(time.time()) - (OLD_SECONDS if probe == "old_timestamp" else 0)
     body = _body(probe, now)
-    if probe == "wrong_signature":
-        signature = sign("whsec_" + secrets.token_urlsafe(24), ts, body)
-    else:
-        signature = ",".join(sign(s, ts, body) for s in signing_secrets)
+    msg_id = json.loads(body)["id"]
+    keys = ["whsec_" + base64.b64encode(secrets.token_bytes(24)).decode()] if probe == "wrong_signature" \
+        else signing_secrets
+    signed = signature_headers(keys, msg_id, ts, body)
     if probe == "tampered_body":
         body = body.replace(b'"probe":"tampered_body"', b'"probe":"tampered_body","total":1')
     headers = {
         "Content-Type": "application/json",
         "User-Agent": "HookFlow/1.0 (security check)",
-        "HookFlow-Event-Id": f"evt_securitycheck_{probe}",
+        "HookFlow-Event-Id": msg_id,
         "HookFlow-Event-Type": EVENT_TYPE,
         "HookFlow-Delivery-Id": f"dlv_securitycheck_{endpoint_id}",
         "HookFlow-Attempt": "1",
-        "HookFlow-Timestamp": str(ts),
         "HookFlow-Security-Check": probe,
+        **signed,
     }
-    if probe != "missing_signature":
-        headers["HookFlow-Signature"] = signature
+    if probe == "missing_signature":
+        del headers["HookFlow-Signature"], headers["webhook-signature"]
     return body, headers
 
 

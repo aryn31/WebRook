@@ -23,6 +23,26 @@ const PROBES: { name: string; label: string; expected: "accept" | "reject" }[] =
 
 const FIX = [
   {
+    label: "Standard Webhooks",
+    code: `// npm install standardwebhooks   (pip install standardwebhooks, go get …, gem install … are similar)
+import { Webhook } from "standardwebhooks";
+
+const wh = new Webhook(process.env.HOOKFLOW_WEBHOOK_SECRET); // the whsec_… secret
+
+// Use the raw request body, exactly as received.
+try {
+  const event = wh.verify(rawBody, {
+    "webhook-id": req.headers["webhook-id"],
+    "webhook-timestamp": req.headers["webhook-timestamp"],
+    "webhook-signature": req.headers["webhook-signature"],
+  }); // also rejects requests older than 5 minutes
+  handle(event);
+  res.sendStatus(204);
+} catch {
+  res.sendStatus(400);
+}`,
+  },
+  {
     label: "Node.js",
     code: `import { verify } from "hookflow"; // or check by hand, below
 

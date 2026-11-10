@@ -32,7 +32,7 @@ from app.models import (
     AuditLog, Delivery, DeliveryAttempt, DeliveryStatus, Endpoint, Event, IdempotencyKey, OutboxMessage,
 )
 from app.security import decrypt_secret
-from app.signing import sign
+from app.signing import signature_headers
 from app.worker import concurrency
 from app.urlguard import GuardedTransport, UnresolvableHost, UnsafeDestination
 from app.worker.retry import is_retryable_status, retry_delay_seconds
@@ -208,8 +208,9 @@ def _process_claimed(delivery_id: str) -> str:
         "HookFlow-Event-Type": event.event_type,
         "HookFlow-Delivery-Id": delivery_id,
         "HookFlow-Attempt": str(attempt_number),
-        "HookFlow-Timestamp": str(timestamp),
-        "HookFlow-Signature": ",".join(sign(secret, timestamp, body) for secret in secrets),
+        # HookFlow-Timestamp/-Signature plus the Standard Webhooks headers; webhook-id is the event ID, the same on
+        # every retry and replay, so receivers can drop duplicates with it.
+        **signature_headers(secrets, event.id, timestamp, body),
     }
 
     started = _now()

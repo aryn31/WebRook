@@ -605,7 +605,27 @@ HookFlow-Signature: v1=5f2b...        (two comma-separated values during a secre
 
 ### Verifying the signature
 
-The [SDKs](../sdks) do this for you: `hookflow.verify(raw_body, headers, secret)` in Python and
+Every request carries two signatures over the same timestamp and body. Verify whichever suits you.
+
+**Standard Webhooks (easiest).** Requests follow the [Standard Webhooks](https://www.standardwebhooks.com) spec:
+
+- `webhook-id`: the event ID, the same on retries and replays (use it to drop duplicates);
+- `webhook-timestamp`: Unix seconds;
+- `webhook-signature`: `v1,<base64 HMAC-SHA256 of "{webhook-id}.{webhook-timestamp}.{raw body}">`. The key is
+  the base64-decoded part of the secret after `whsec_`. Several values are separated by spaces during a rotation.
+
+The official libraries (JavaScript, Python, Go, Ruby, PHP, Java, C#, Rust, Elixir) verify it in one call, timestamp
+check included:
+
+```js
+import { Webhook } from "standardwebhooks";
+const event = new Webhook(process.env.HOOKFLOW_WEBHOOK_SECRET).verify(rawBody, headers); // throws if not genuine
+```
+
+Secrets created before 2026-11-10 may not be accepted by the stricter libraries. Endpoints show
+`secret_format: "legacy"` for those; rotate the secret to get a standard one.
+
+**HookFlow's own header.** The [SDKs](../sdks) verify it for you: `hookflow.verify(raw_body, headers, secret)` in Python and
 `verify(rawBody, req.headers, secret)` in Node. To write it yourself:
 
 `HookFlow-Signature` is `v1=` followed by the hex HMAC-SHA256 of `"{HookFlow-Timestamp}.{raw request body}"`,

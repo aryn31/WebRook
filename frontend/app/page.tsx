@@ -88,7 +88,7 @@ const FAQ = [
   },
   {
     q: "Do I need an SDK?",
-    a: "No. Sending an event is one HTTPS request from any language. Receivers check a standard HMAC-SHA256 signature; the docs have copy-paste examples.",
+    a: "No. Sending an event is one HTTPS request from any language. Requests are signed in the Standard Webhooks format, so receivers can verify them with the official libraries for Node, Python, Go, Ruby, PHP, Java and more.",
   },
   {
     q: "Can it send the same event twice?",
@@ -193,12 +193,12 @@ export default function LandingPage() {
               <Reveal className="bento-card" delay={80}>
                 <div className="bento-text">
                   <h3>Signed, every time</h3>
-                  <p>HMAC-SHA256 over the timestamp and body, with zero-downtime rotation. One click checks that your endpoint actually verifies it.</p>
+                  <p>HMAC-SHA256 in the Standard Webhooks format, so official libraries verify it. Zero-downtime rotation, and one click checks your endpoint really does.</p>
                 </div>
                 <pre className="viz-sig" aria-hidden>{`POST /hooks HTTP/1.1
-HookFlow-Event-Id: evt_01JD8…
-HookFlow-Timestamp: 1793612400
-HookFlow-Signature: `}<mark>v1=9f3c51…e07a</mark></pre>
+webhook-id: evt_01JD8…
+webhook-timestamp: 1793612400
+webhook-signature: `}<mark>v1,K5oZfzN95Z9UVu1E…</mark></pre>
               </Reveal>
               <Reveal className="bento-card">
                 <div className="bento-text">

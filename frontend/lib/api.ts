@@ -94,6 +94,8 @@ export type Endpoint = {
   alert_sent_at: string | null;
   /** Last receiver security check, or null if never run (or the URL changed since). */
   security_check: SecurityCheck | null;
+  /** "legacy": the signing secret predates Standard Webhooks support; rotating gives a standard one. */
+  secret_format?: "standard" | "legacy";
   created_at: string;
   updated_at: string;
 };
