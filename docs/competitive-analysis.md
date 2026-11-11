@@ -109,7 +109,7 @@ What this shows:
 - Show a "Signature verified ✓" badge on endpoints that pass.
 - Easy to demo, valuable to security-minded buyers, and nobody does it.
 
-**B2. Proof-of-delivery links.** *Effort: about a day.*
+**B2. Proof-of-delivery links.** *Effort: about a day.* **Done (2026-11-11).**
 
 - From any delivery, create a read-only link (expiring after 7–30 days, can be revoked).
 - The link shows the event, the exact request sent, each attempt, and the customer server's response and timing.

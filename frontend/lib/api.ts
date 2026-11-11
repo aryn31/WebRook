@@ -189,6 +189,50 @@ export const DELIVERY_STATUSES: DeliveryStatus[] = [
   "cancelled",
 ];
 
+export type ProofLink = {
+  id: string;
+  delivery_id: string;
+  include_body: boolean;
+  sender_name: string | null;
+  created_by_email: string | null;
+  created_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+  view_count: number;
+  last_viewed_at: string | null;
+  /** Not revoked and not expired. */
+  active: boolean;
+};
+
+/** Only the create call returns the link: HookFlow stores a hash of it. */
+export type ProofLinkCreated = ProofLink & { url: string; token: string };
+
+export type ProofView = {
+  proof_id: string;
+  sender_name: string | null;
+  delivery_id: string;
+  event_id: string;
+  event_type: string;
+  event_created_at: string;
+  /** Scheme, host and path; a query string shows as "?…". */
+  endpoint_url: string;
+  status: DeliveryStatus;
+  delivered_at: string | null;
+  attempts: {
+    attempt_number: number;
+    started_at: string;
+    duration_ms: number | null;
+    response_status: number | null;
+    error: string | null;
+    success: boolean;
+  }[];
+  body_sha256: string;
+  body: string | null;
+  expires_at: string;
+  checked_at: string;
+  receipt: { payload: string; signature: string; algorithm: "Ed25519"; key_id: string };
+};
+
 export type Delivery = {
   id: string;
   event_id: string;
@@ -267,6 +311,8 @@ export type AuditAction =
   | "endpoint.secret_viewed"
   | "endpoint.secret_rotated"
   | "delivery.replayed"
+  | "delivery.proof_shared"
+  | "delivery.proof_revoked"
   | "event.replayed"
   | "deliveries.bulk_replayed"
   | "team.invite_created"
@@ -287,6 +333,8 @@ export const AUDIT_ACTIONS: AuditAction[] = [
   "endpoint.secret_viewed",
   "endpoint.secret_rotated",
   "delivery.replayed",
+  "delivery.proof_shared",
+  "delivery.proof_revoked",
   "event.replayed",
   "deliveries.bulk_replayed",
   "team.invite_created",
@@ -665,6 +713,13 @@ export const api = {
     request<BulkReplayResult>("POST", "/deliveries/replay", { body: { ...filters, dry_run } }),
   /** Oldest first. */
   getReplays: (id: string) => request<List<Replay>>("GET", `/deliveries/${encodeURIComponent(id)}/replays`),
+  listProofs: (id: string) => request<List<ProofLink>>("GET", `/deliveries/${encodeURIComponent(id)}/proofs`),
+  createProof: (id: string, body: { include_body: boolean; expires_in_days: number; sender_name?: string | null }) =>
+    request<ProofLinkCreated>("POST", `/deliveries/${encodeURIComponent(id)}/proofs`, { body }),
+  revokeProof: (id: string, proofId: string) =>
+    request<void>("DELETE", `/deliveries/${encodeURIComponent(id)}/proofs/${encodeURIComponent(proofId)}`),
+  /** Public: the token is the permission. */
+  viewProof: (token: string) => request<ProofView>("GET", `/proof/${encodeURIComponent(token)}`),
 
   // Audit log
   listAuditLogs: (

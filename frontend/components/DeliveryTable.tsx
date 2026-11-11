@@ -6,6 +6,7 @@ import { api, errorMessage, type Attempt, type Delivery, type Replay } from "@/l
 import { actorLabel, explainDelivery, formatDuration, formatLocal, formatUtc, STATUS_LABEL } from "@/lib/format";
 import { ErrorBox, Loading, StatusPill, Time } from "./ui";
 import { useMe } from "./MeContext";
+import { ProofLinks } from "./ProofLinks";
 
 const NEEDS_EXPLAINING = new Set(["failed", "retrying", "cancelled"]);
 
@@ -312,6 +313,7 @@ export function DeliveryTable({
                         {d.replay_count > 0 && d.last_replayed_at && <> · last replayed {formatLocal(d.last_replayed_at)}</>}
                       </div>
                       <AttemptHistory deliveryId={d.id} replayCount={d.replay_count} />
+                      <ProofLinks deliveryId={d.id} />
                     </td>
                   </tr>
                 )}

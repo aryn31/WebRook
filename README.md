@@ -74,6 +74,8 @@ Log in as `maya.demo@example.com` (password `demo123456`) for the full demo. On 
 
 - [docs/PRD.md](docs/PRD.md): product requirements v1.3, the original PRD plus the decisions made while building
   ([PDF](docs/HookFlow-PRD-v1.3.pdf); the original v1.0 is `HookFlow.pdf`).
+- [docs/interview-guide.md](docs/interview-guide.md): the whole project explained: architecture, stack choices
+  and why, reliability and security design, and common interview questions.
 - [docs/api.md](docs/api.md): API reference, delivery behaviour, and how receivers verify signatures.
 - [docs/signatures.md](docs/signatures.md): how requests are signed, how receivers check them, and how the
   signature check on each endpoint page works.

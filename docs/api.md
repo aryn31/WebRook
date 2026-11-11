@@ -492,6 +492,65 @@ attempts stay in the history, and new attempts continue the numbering (`HookFlow
 - Replays are rate limited to 60 deliveries per minute per account. Replaying an event with 5 failed deliveries uses 5.
 - Every replay is recorded in `GET /v1/deliveries/{id}/replays` and in the audit log.
 
+### Proof of delivery
+
+A proof link is a public page about one delivery that you can send to anyone, for example a customer who says
+they never got an event. No login is needed to open it: the link is the permission. The page is read live from
+HookFlow's records each time it's opened.
+
+The page shows:
+- the delivery's status, and each finished attempt with the receiver's status code, time and duration;
+- the event ID (sent as `webhook-id` and `HookFlow-Event-Id`) and the SHA-256 of the exact body sent, so the
+  receiver can match it against their own logs;
+- the endpoint URL without its query string or credentials, which can hold secrets;
+- the body itself, only if the link was created with `include_body`;
+- a signed receipt (below).
+
+The receiver's response bodies are never shown.
+
+#### `POST /v1/deliveries/{id}/proofs` (deliveries:replay) → `201 ProofLink & { "url", "token" }`
+
+```json
+{ "include_body": false, "expires_in_days": 30, "sender_name": "Northwind" }
+```
+
+- All fields are optional. `expires_in_days` is 1–365 and defaults to 30. `sender_name` (up to 100 characters) is
+  shown on the page as the sender.
+- `url` is the page, `{APP_URL}/proof/{token}`. It's returned only here, because HookFlow stores only a hash of the
+  token.
+- A delivery can have up to 20 active links (`409 too_many_proof_links`). Creating links is limited to 30 per minute
+  per account.
+- Recorded in the audit log as `delivery.proof_shared`.
+
+`ProofLink`: `{ id, delivery_id, include_body, sender_name, created_by_email, created_at, expires_at, revoked_at,
+view_count, last_viewed_at, active }`.
+
+#### `GET /v1/deliveries/{id}/proofs` (deliveries:read) → `{ "data": ProofLink[] }` (newest first)
+
+#### `DELETE /v1/deliveries/{id}/proofs/{proof_id}` (deliveries:replay) → `204`
+
+Turns the link off at once. Turning it off twice is a no-op. Recorded as `delivery.proof_revoked`.
+
+#### `GET /v1/proof/{token}` (no auth) → `ProofView`
+
+- `404 proof_not_found` for an unknown link. `410 proof_revoked` or `410 proof_expired` for a link that no longer
+  works.
+- Limited to 60 requests per minute per IP. Each view adds 1 to the link's `view_count`.
+
+#### Signed receipt
+
+`ProofView.receipt` is `{ payload, signature, algorithm: "Ed25519", key_id }`:
+- `payload` is a JSON string with the page's facts: `issuer`, `delivery_id`, `event_id`, `event_type`, `status`,
+  `delivered_at`, `body_sha256`, `attempts`, `checked_at` and so on.
+- `signature` is a base64 Ed25519 signature over the UTF-8 bytes of `payload`.
+
+To check a saved receipt, verify `signature` against the public key from `GET /v1/proof/public-key` →
+`{ "algorithm": "Ed25519", "key_id", "public_key" }` (raw 32-byte key, standard base64). Then parse `payload`. Any
+edit to `payload` makes the check fail. The page's **Verify signature** button does this check in the browser.
+
+The key is derived from `SECRET_ENCRYPTION_KEY`. If that setting changes, the public key changes too, and older
+receipts no longer verify against it.
+
 ## Stats
 
 ### `GET /v1/stats?range=24h|7d|30d` (default `7d`)
@@ -552,6 +611,7 @@ type AuditLog = {
 | `endpoint.updated` | `details.changes` = `{ field: { from, to } }` |
 | `endpoint.secret_viewed`, `endpoint.secret_rotated` | Signing secret read or rotated |
 | `delivery.replayed`, `event.replayed` | Manual replays |
+| `delivery.proof_shared`, `delivery.proof_revoked` | Proof-of-delivery links created or turned off |
 | `deliveries.bulk_replayed` | Bulk replay; `details` has the filters and count |
 | `team.invite_created`, `team.invite_revoked` | Invitations |
 | `team.member_joined`, `team.member_role_changed`, `team.member_removed`, `team.member_left` | Team changes |

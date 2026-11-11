@@ -6,6 +6,58 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-11 — Proof-of-delivery links
+
+### Done
+- **Proof-of-delivery links** (recommendation B2). From any delivery, **Share proof** creates a public page to
+  send to a customer who says "we never got it".
+  - **The page** (`/proof/<token>`, no login) shows:
+    - the verdict and a plain-English summary;
+    - every attempt, with status code, time and duration;
+    - the event ID and the body's SHA-256, with steps to match them against the receiver's logs;
+    - the body only if the sharer chose to show it.
+  - **Signed receipt:** the page's facts are signed with Ed25519. **Verify signature** checks it in the browser,
+    and **Download receipt** saves it for checking later with any Ed25519 library. The public key is at
+    `GET /v1/proof/public-key`. It's derived from `SECRET_ENCRYPTION_KEY`, so there's no new setting.
+  - **Safety:**
+    - only the token's hash is stored;
+    - the endpoint's query string and credentials are hidden;
+    - receiver response bodies are never shown;
+    - links expire (7 days to 1 year) and can be turned off;
+    - views are counted;
+    - creating links needs `deliveries:replay`;
+    - actions are in the audit log.
+- Backend:
+  - `app/proof.py`, `app/routers/proofs.py`;
+  - migration `0010_proof_links`;
+  - the `ProofLink` model.
+- Frontend:
+  - `components/ProofLinks.tsx`, the panel in each expanded delivery row;
+  - `app/proof/[token]/`, the public page, allowed in `middleware.ts`;
+  - audit labels.
+- Docs: "Proof of delivery" in `docs/api.md`. B2 is marked done in the competitive analysis.
+- Added `docs/interview-guide.md`, the whole project explained for interviews (architecture, stack and why,
+  reliability and security design, trade-offs, likely questions), linked from the README.
+
+### Checked
+- `tests/test_proofs.py` (7 tests) covers:
+  - the page's contents, and the body hash matching the exact bytes the receiver got;
+  - the body appearing only when chosen;
+  - the receipt verifying, and failing after an edit;
+  - revoked, expired and unknown links;
+  - view counts, and the token never being listed or stored;
+  - other accounts and read-only keys being refused.
+- Full suite: 246 passed.
+- Headless Chrome with the demo account:
+  - the page in light, dark and phone widths;
+  - **Verify signature** says "Signature valid";
+  - Share proof → Create link → the link and list appear.
+
+### Left to do
+- Render still needs Manual Deploy → "Deploy latest commit". Migration 0010 runs on deploy.
+
+---
+
 ## 2026-11-11 — Demo password
 
 ### Done

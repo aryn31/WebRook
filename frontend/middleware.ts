@@ -8,7 +8,7 @@ const PUBLIC_PATHS = ["/", "/platform", "/login", "/register", "/forgot-password
 // for visitors that have no session cookie at all.
 export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
-  if (PUBLIC_PATHS.includes(pathname)) return NextResponse.next();
+  if (PUBLIC_PATHS.includes(pathname) || pathname.startsWith("/proof/")) return NextResponse.next();
   if (req.cookies.has("hf_session")) return NextResponse.next();
   const url = req.nextUrl.clone();
   url.pathname = "/login";

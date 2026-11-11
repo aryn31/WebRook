@@ -562,6 +562,83 @@ class AttemptOut(BaseModel):
     success: bool
 
 
+class ProofLinkIn(BaseModel):
+    # Show the event's body on the page. Off by default: the page always shows the body's SHA-256 instead.
+    include_body: bool = False
+    expires_in_days: int = Field(default=30, ge=1, le=365)
+    # Shown on the page as the sender, e.g. your company name.
+    sender_name: str | None = Field(default=None, max_length=100)
+
+    @field_validator("sender_name")
+    @classmethod
+    def _blank_is_none(cls, v: str | None) -> str | None:
+        return (v or "").strip() or None
+
+
+class ProofLinkOut(BaseModel):
+    id: str
+    delivery_id: str
+    include_body: bool
+    sender_name: str | None
+    created_by_email: str | None
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None
+    view_count: int
+    last_viewed_at: datetime | None
+    # Not revoked and not expired.
+    active: bool
+
+
+class ProofLinkCreated(ProofLinkOut):
+    # The page's address. It's only shown once: HookFlow stores a hash of the token, not the token.
+    url: str
+    token: str
+
+
+class ProofAttempt(BaseModel):
+    attempt_number: int
+    started_at: datetime
+    duration_ms: int | None
+    response_status: int | None
+    error: str | None
+    success: bool
+
+
+class ProofReceipt(BaseModel):
+    # The exact JSON text that was signed. Verify the signature over its UTF-8 bytes, then parse it.
+    payload: str
+    signature: str
+    algorithm: Literal["Ed25519"] = "Ed25519"
+    key_id: str
+
+
+class ProofView(BaseModel):
+    proof_id: str
+    sender_name: str | None
+    delivery_id: str
+    event_id: str
+    event_type: str
+    event_created_at: datetime
+    # Scheme, host and path. A query string is hidden, since it can hold credentials.
+    endpoint_url: str
+    status: str
+    delivered_at: datetime | None
+    attempts: list[ProofAttempt]
+    body_sha256: str
+    body: str | None
+    expires_at: datetime
+    checked_at: datetime
+    receipt: ProofReceipt
+
+
+class ProofPublicKey(BaseModel):
+    algorithm: Literal["Ed25519"] = "Ed25519"
+    key_id: str
+    # Raw 32-byte public key, standard base64.
+    public_key: str
+
+
 class Actor(BaseModel):
     type: Literal["session", "api_key", "portal"]
     api_key_id: str | None = None

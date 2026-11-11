@@ -230,6 +230,8 @@ export const AUDIT_LABEL: Record<string, string> = {
   "consumer.deleted": "Consumer deleted",
   "consumer.portal_opened": "Portal link created",
   "delivery.replayed": "Delivery replayed",
+  "delivery.proof_shared": "Proof link shared",
+  "delivery.proof_revoked": "Proof link turned off",
   "event.replayed": "Event replayed",
   "deliveries.bulk_replayed": "Deliveries replayed in bulk",
   "team.invite_created": "Member invited",
@@ -288,6 +290,13 @@ export function auditSummary(log: AuditLog): string[] {
       break;
     case "delivery.replayed":
       return [typeof d.previous_status === "string" ? `Was ${d.previous_status}` : null].filter((x): x is string => !!x);
+    case "delivery.proof_shared": {
+      const days = typeof d.expires_in_days === "number" ? d.expires_in_days : null;
+      return [days != null ? `Works for ${days} day${days === 1 ? "" : "s"}` : null, d.include_body ? "Shows the body" : "Body hidden"]
+        .filter((x): x is string => !!x);
+    }
+    case "delivery.proof_revoked":
+      return [];
     case "deliveries.bulk_replayed": {
       const n = typeof d.count === "number" ? d.count : null;
       const f = (d.filters ?? {}) as Record<string, unknown>;
