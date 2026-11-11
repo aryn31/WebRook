@@ -6,6 +6,25 @@ Each entry covers: what was built or changed, decisions made, how it was checked
 
 ---
 
+## 2026-11-11 — Demo password
+
+### Done
+- Changed the demo accounts' default password to `demo123456` in `seed_demo.py` and the README. It's the shortest
+  password the normal forms accept (10 characters).
+- Added [docs/demo-accounts.md](docs/demo-accounts.md), which lists the six demo accounts and how to create them.
+- Recreated the local demo accounts with `--reset`. Logging in as Maya with the new password works.
+- **Logo in dark mode:** the tile turned near-white and the lime wave almost vanished. Dark mode now uses a dark tile
+  with a faint outline (`--logo-tile`, `--logo-edge` and `--logo-src` tokens in `globals.css`). The favicon follows
+  the browser's theme too.
+- **Logo files** in `frontend/public/brand/`, light and dark, each as an SVG and a PNG with a transparent background:
+  the mark alone (1024×1024) and the mark with the wordmark (2142×480). The wordmark is outlined from Geist
+  SemiBold, so the files don't need the font installed.
+
+### Left to do
+- Render still hasn't deployed commit 1461b4c. Use Manual Deploy → "Deploy latest commit".
+
+---
+
 ## 2026-11-10 — Standard Webhooks signatures
 
 ### Done

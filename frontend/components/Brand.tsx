@@ -4,7 +4,7 @@ import Link from "next/link";
 export function LogoMark({ size = 24 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="logo-mark">
-      <rect width="24" height="24" rx="7" className="logo-tile" />
+      <rect x="0.5" y="0.5" width="23" height="23" rx="6.5" className="logo-tile" />
       <path d="M5.5 15.5c2.2 0 2.6-7 6.5-7s4.3 7 6.5 7" className="logo-wave" />
       <circle cx="5.5" cy="15.5" r="1.6" className="logo-src" />
       <circle cx="18.5" cy="15.5" r="2.1" className="logo-dst" />

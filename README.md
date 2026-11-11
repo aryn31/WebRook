@@ -67,7 +67,7 @@ To fill a local copy with realistic demo accounts and 30 days of activity:
 docker compose exec api python scripts/seed_demo.py          # --reset to recreate
 ```
 
-Log in as `maya.demo@example.com` (password `demo-password-2026`) for the full demo. On a public server, set
+Log in as `maya.demo@example.com` (password `demo123456`) for the full demo. On a public server, set
 `DEMO_PASSWORD` first. The default is in this repository. See [backend/scripts/seed_demo.py](backend/scripts/seed_demo.py).
 
 ## Documentation

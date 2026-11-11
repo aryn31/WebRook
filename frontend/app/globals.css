@@ -19,6 +19,9 @@
   --link: #4b6400;
   --signal: #d4ff3a;
   --signal-ink: #141413;
+  --logo-tile: #161614;
+  --logo-edge: transparent;
+  --logo-src: #f6f5f1;
 
   --status-delivered: #1f9d55;
   --status-failed: #d93a2b;
@@ -61,6 +64,9 @@
     --border: #272622;
     --border-strong: #3a3833;
     --text: #f2f0e9;
+    --logo-tile: #1e1e1b;
+    --logo-edge: rgba(242, 240, 233, 0.16);
+    --logo-src: #f2f0e9;
     --text-2: #bab7ac;
     --muted: #8a877d;
 
@@ -105,6 +111,9 @@
     --border: #272622;
     --border-strong: #3a3833;
     --text: #f2f0e9;
+    --logo-tile: #1e1e1b;
+    --logo-edge: rgba(242, 240, 233, 0.16);
+    --logo-src: #f2f0e9;
     --text-2: #bab7ac;
     --muted: #8a877d;
 
@@ -197,9 +206,9 @@ p { margin: 0 0 10px; }
 }
 .brand:hover { text-decoration: none; }
 .logo-mark { display: block; flex-shrink: 0; }
-.logo-tile { fill: var(--text); }
+.logo-tile { fill: var(--logo-tile); stroke: var(--logo-edge); stroke-width: 1; }
 .logo-wave { fill: none; stroke: var(--signal); stroke-width: 1.9; stroke-linecap: round; }
-.logo-src { fill: var(--bg); }
+.logo-src { fill: var(--logo-src); }
 .logo-dst { fill: var(--signal); }
 .sidebar-brand { padding: 2px 8px 22px; }
 .nav { display: flex; flex-direction: column; gap: 1px; }

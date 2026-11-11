@@ -37,7 +37,7 @@ from app.models import (  # noqa: E402
 from app.security import encrypt_secret, hash_password, new_api_key, new_signing_secret  # noqa: E402
 
 # Set DEMO_PASSWORD when seeding a public server: the default below is in a public repository.
-DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD") or "demo-password-2026"
+DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD") or "demo123456"
 DAYS = 29  # stays inside the 30-day retention window
 rng = random.Random(20261107)
 NOW = datetime.now(UTC).replace(microsecond=0)
